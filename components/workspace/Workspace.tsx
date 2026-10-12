@@ -1,31 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Pencil, ListTree, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Agent, Message } from "@/lib/types";
-import {
-  createSession,
-  newMessage,
-  renameSession,
-  saveMessages,
-  titleFrom,
-  type SessionSummary,
-} from "@/lib/sessions";
+import { newMessage, renameSession, type SessionSummary } from "@/lib/sessions";
+import type { ChatEvent, ChatRequest } from "@/lib/chat-protocol";
 import { AgentIcon } from "../AgentIcon";
 import { FavoriteButton } from "../FavoriteButton";
 import { useToast } from "../Toast";
 import { ThreadDrawer, ThreadPanel } from "./ThreadSelector";
-import { MessageList } from "./MessageList";
+import { MessageList, type Pending } from "./MessageList";
 import { Composer } from "./Composer";
 
 type Props = {
   agent: Agent;
   sessions: SessionSummary[];
-  /** null = a fresh thread that is created in the DB on its first message */
+  /** null = a fresh thread that is created on the server with its first message */
   session: { id: string; title: string | null; messages: Message[] } | null;
 };
+
+const ERR_TEXT = "לא הצלחנו לקבל תשובה.";
+const ERR_IMAGE = "לא הצלחנו ליצור את התמונה.";
+const ERR_OFFLINE = "אין כרגע חיבור לאינטרנט.";
 
 // Each thread mounts its own Workspace instance (keyed by session id in the page),
 // so no message state can carry over between threads.
@@ -35,43 +33,134 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
   const [sessionId, setSessionId] = useState<string | null>(session?.id ?? null);
   const [title, setTitle] = useState<string | null>(session?.title ?? null);
   const [messages, setMessages] = useState<Message[]>(session?.messages ?? []);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<Pending>(null);
+  const [failure, setFailure] = useState<{ message: string; stopped?: boolean } | null>(() =>
+    // A saved user message without an answer (e.g. failure before a refresh) can be retried.
+    session?.messages.at(-1)?.role === "user"
+      ? { message: agent.is_image_generator ? ERR_IMAGE : ERR_TEXT }
+      : null,
+  );
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+  const sessionIdRef = useRef<string | null>(sessionId);
 
-  function upsertSummary(s: SessionSummary) {
-    setSessions((list) => [s, ...list.filter((x) => x.id !== s.id)]);
+  const generating = pending !== null;
+
+  function upsertSummary(id: string, t: string | null) {
+    setSessions((list) => [
+      { id, title: t, updated_at: new Date().toISOString() },
+      ...list.filter((x) => x.id !== id),
+    ]);
+  }
+
+  /** Runs one request against /api/chat. Resolves false if the request was rejected up front. */
+  async function run(req: Omit<ChatRequest, "agentId" | "sessionId">, onAccepted?: () => void) {
+    if (!navigator.onLine) {
+      setFailure({ message: ERR_OFFLINE });
+      return false;
+    }
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setFailure(null);
+    setPending({ text: "" });
+
+    let res: Response;
+    try {
+      res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...req, agentId: agent.id, sessionId: sessionIdRef.current }),
+        signal: controller.signal,
+      });
+    } catch {
+      setPending(null);
+      if (!controller.signal.aborted) toast(navigator.onLine ? ERR_TEXT : ERR_OFFLINE, "error");
+      return false;
+    }
+    if (!res.ok || !res.body) {
+      setPending(null);
+      toast(ERR_TEXT, "error");
+      return false;
+    }
+    onAccepted?.();
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let text = "";
+    let completed = false;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const ev = JSON.parse(line) as ChatEvent;
+          if (ev.t === "session") {
+            if (!sessionIdRef.current) {
+              sessionIdRef.current = ev.id;
+              setSessionId(ev.id);
+              setTitle(ev.title);
+              // Keep the URL in sync without remounting this thread.
+              window.history.replaceState(null, "", `/agents/${agent.id}?session=${ev.id}`);
+              upsertSummary(ev.id, ev.title);
+            }
+          } else if (ev.t === "delta") {
+            text += ev.text;
+            setPending({ text });
+          } else if (ev.t === "done") {
+            completed = true;
+            setMessages((list) => [...list, ev.message]);
+            if (ev.title) setTitle(ev.title);
+            upsertSummary(sessionIdRef.current!, ev.title ?? title);
+          } else if (ev.t === "error") {
+            setFailure({ message: ev.kind === "image" ? ERR_IMAGE : ERR_TEXT });
+          }
+        }
+      }
+    } catch {
+      if (controller.signal.aborted) {
+        setFailure({ message: "התשובה נעצרה.", stopped: true });
+      } else {
+        setFailure({ message: agent.is_image_generator ? ERR_IMAGE : ERR_TEXT });
+      }
+    } finally {
+      abortRef.current = null;
+      setPending(null);
+      if (!completed && !controller.signal.aborted) {
+        setFailure((f) => f ?? { message: agent.is_image_generator ? ERR_IMAGE : ERR_TEXT });
+      }
+    }
+    return true;
   }
 
   async function send(text: string): Promise<boolean> {
-    if (!navigator.onLine) {
-      toast("אין כרגע חיבור לאינטרנט.", "error");
-      return false;
-    }
-    const userMsg = newMessage("user", text);
-    const next = [...messages, userMsg];
-    setBusy(true);
-    setMessages(next);
+    const optimistic = newMessage("user", text);
+    setMessages((list) => [...list, optimistic]);
+    const accepted = await run({ message: text });
+    if (!accepted) setMessages((list) => list.filter((m) => m.id !== optimistic.id));
+    return accepted;
+  }
 
-    const supabase = createClient();
-    const res = sessionId
-      ? await saveMessages(supabase, sessionId, agent.id, next)
-      : await createSession(supabase, agent.id, next, titleFrom(text));
-    setBusy(false);
+  function retry() {
+    // Regenerating a completed answer replaces it; a missing answer is simply requested again.
+    if (messages.at(-1)?.role === "assistant") {
+      const prev = messages;
+      setMessages(prev.slice(0, -1));
+      run({ message: "", retry: true }).then((ok) => {
+        if (!ok) setMessages(prev);
+      });
+    } else {
+      run({ message: "", retry: true });
+    }
+  }
 
-    if (res.error || !res.data) {
-      setMessages(messages);
-      toast("ההודעה לא נשמרה. אפשר לנסות שוב.", "error");
-      return false;
-    }
-    if (!sessionId) {
-      setSessionId(res.data.id);
-      setTitle(res.data.title);
-      // Keep the URL in sync without remounting this thread.
-      window.history.replaceState(null, "", `/agents/${agent.id}?session=${res.data.id}`);
-    }
-    upsertSummary(res.data);
-    return true;
+  function stop() {
+    abortRef.current?.abort();
   }
 
   async function saveTitle(value: string) {
@@ -86,7 +175,7 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
       toast("השם לא נשמר.", "error");
       return;
     }
-    upsertSummary(res.data);
+    upsertSummary(res.data.id, res.data.title);
   }
 
   const threadLabel = title || "נושא חדש";
@@ -177,10 +266,17 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
           </div>
 
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <MessageList messages={messages} />
+            <MessageList
+              messages={messages}
+              pending={pending}
+              isImageAgent={agent.is_image_generator}
+              failure={failure}
+              busy={generating}
+              onRetry={retry}
+            />
           </div>
 
-          <Composer onSend={send} disabled={busy} />
+          <Composer onSend={send} onStop={stop} generating={generating} />
         </div>
       </div>
 

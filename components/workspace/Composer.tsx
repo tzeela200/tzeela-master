@@ -1,13 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { SendHorizontal } from "lucide-react";
+import { SendHorizontal, Square } from "lucide-react";
 
 export function Composer({
   onSend,
+  onStop,
+  generating,
   disabled,
 }: {
   onSend: (text: string) => Promise<boolean>;
+  onStop: () => void;
+  /** An answer is being produced — the send button becomes "stop". */
+  generating: boolean;
   disabled?: boolean;
 }) {
   const [text, setText] = useState("");
@@ -23,7 +28,7 @@ export function Composer({
 
   async function submit() {
     const value = text.trim();
-    if (!value || disabled) return;
+    if (!value || disabled || generating) return;
     const ok = await onSend(value);
     if (ok) setText("");
     ref.current?.focus();
@@ -61,14 +66,25 @@ export function Composer({
           dir="auto"
           className="max-h-[200px] min-h-12 flex-1 resize-none rounded-input border border-border bg-bg px-3 py-3 leading-normal outline-none transition-colors duration-150 focus:border-primary"
         />
-        <button
-          type="submit"
-          disabled={disabled || !text.trim()}
-          aria-label="שלח"
-          className="flex size-12 shrink-0 items-center justify-center rounded-button bg-primary text-white transition-opacity duration-150 disabled:opacity-50"
-        >
-          <SendHorizontal className="size-5 -scale-x-100" aria-hidden />
-        </button>
+        {generating ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="עצור"
+            className="flex size-12 shrink-0 items-center justify-center rounded-button border border-primary text-primary"
+          >
+            <Square className="size-4 fill-current" aria-hidden />
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={disabled || !text.trim()}
+            aria-label="שלח"
+            className="flex size-12 shrink-0 items-center justify-center rounded-button bg-primary text-white transition-opacity duration-150 disabled:opacity-50"
+          >
+            <SendHorizontal className="size-5 -scale-x-100" aria-hidden />
+          </button>
+        )}
       </div>
     </form>
   );
