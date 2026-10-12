@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* ------------------------------------------------------------------
+   Design tokens — Theme "Evergreen".
+   All colors live here so Dark Mode can be added later by redefining
+   these variables only (out of MVP scope).
+   ------------------------------------------------------------------ */
+:root {
+  --c-primary: #1f5e4a;
+  --c-primary-hover: #edf5f1;
+  --c-secondary: #5f6b73;
+  --c-accent: #e58e27;
+  --c-bg: #f7f8f6;
+  --c-surface: #ffffff;
+  --c-border: #e6e8e6;
+  --c-success: #3e8e5a;
+  --c-error: #c94949;
+  --c-text: #1d2327;
+
+  --r-card: 18px;
+  --r-button: 14px;
+  --r-input: 12px;
+  --r-dialog: 22px;
+
+  --shadow-soft: 0 1px 2px rgb(16 24 20 / 0.04), 0 4px 16px rgb(16 24 20 / 0.05);
+}
+
+@theme inline {
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-secondary: var(--c-secondary);
+  --color-accent: var(--c-accent);
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-border: var(--c-border);
+  --color-success: var(--c-success);
+  --color-error: var(--c-error);
+  --color-ink: var(--c-text);
+
+  --radius-card: var(--r-card);
+  --radius-button: var(--r-button);
+  --radius-input: var(--r-input);
+  --radius-dialog: var(--r-dialog);
+
+  --shadow-soft: var(--shadow-soft);
+
+  --font-sans: var(--font-heebo), system-ui, sans-serif;
+
+  --text-caption: 13px;
+  --text-button: 15px;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--c-bg);
+  color: var(--c-text);
+  font-family: var(--font-heebo), system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+h1 { font-size: 28px; font-weight: 700; line-height: 1.25; }
+h2 { font-size: 22px; font-weight: 700; line-height: 1.3; }
+h3 { font-size: 18px; font-weight: 600; line-height: 1.35; }
+
+@media (min-width: 768px) {
+  h1 { font-size: 36px; }
+  h2 { font-size: 28px; }
+  h3 { font-size: 22px; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
