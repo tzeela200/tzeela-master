@@ -1,19 +1,19 @@
 @import "tailwindcss";
 
 /* ------------------------------------------------------------------
-   Design tokens — Theme "Evergreen".
+   Design tokens — brand theme (pink from the MYUP logo; was "Evergreen").
    All colors live here so Dark Mode can be added later by redefining
    these variables only (out of MVP scope).
    ------------------------------------------------------------------ */
 :root {
-  --c-primary: #1f5e4a;
-  --c-primary-hover: #edf5f1;
+  --c-primary: #cc0c6c; /* brand pink, from the MYUP logo */
+  --c-primary-hover: #fceaf2;
   --c-secondary: #5f6b73;
   --c-accent: #e58e27;
   --c-bg: #f7f8f6;
   --c-surface: #ffffff;
   --c-border: #e6e8e6;
-  --c-success: #3e8e5a;
+  --c-success: #a30a57;
   --c-error: #c94949;
   --c-text: #1d2327;
 

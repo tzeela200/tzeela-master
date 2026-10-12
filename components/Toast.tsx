@@ -39,7 +39,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             className="flex items-center gap-2 rounded-button bg-ink px-4 py-3 text-[15px] text-white shadow-soft"
           >
             {toast.kind === "success" ? (
-              <CheckCircle2 className="size-5 text-[#9fd4b4]" aria-hidden />
+              <CheckCircle2 className="size-5 text-[#f7a8cd]" aria-hidden />
             ) : (
               <AlertCircle className="size-5 text-[#f0a3a3]" aria-hidden />
             )}
