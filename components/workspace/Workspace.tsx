@@ -1,10 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowRight, Pencil, ListTree, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { Agent, Message } from "@/lib/types";
+import type { Agent, Attachment, Message } from "@/lib/types";
+import { takePendingFile } from "@/lib/pending-file";
 import { newMessage, renameSession, type SessionSummary } from "@/lib/sessions";
 import type { ChatEvent, ChatRequest } from "@/lib/chat-protocol";
 import { AgentIcon } from "../AgentIcon";
@@ -43,6 +45,18 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const intent = useSearchParams().get("intent");
+  const [initialFile, setInitialFile] = useState<File | null>(null);
+
+  // "העלאת קובץ" from the dashboard: the file picked there is attached here.
+  // Consumed once — the guard survives React's double-invoked effects in development.
+  const fileTaken = useRef(false);
+  useEffect(() => {
+    if (intent !== "upload" || fileTaken.current) return;
+    fileTaken.current = true;
+    const f = takePendingFile(agent.id);
+    if (f) setInitialFile(f);
+  }, [intent, agent.id]);
   const sessionIdRef = useRef<string | null>(sessionId);
 
   const generating = pending !== null;
@@ -138,10 +152,11 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
     return true;
   }
 
-  async function send(text: string): Promise<boolean> {
+  async function send(text: string, attachment: Attachment | null): Promise<boolean> {
     const optimistic = newMessage("user", text);
+    if (attachment) optimistic.attachment = attachment;
     setMessages((list) => [...list, optimistic]);
-    const accepted = await run({ message: text });
+    const accepted = await run({ message: text, attachment });
     if (!accepted) setMessages((list) => list.filter((m) => m.id !== optimistic.id));
     return accepted;
   }
@@ -276,7 +291,14 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
             />
           </div>
 
-          <Composer onSend={send} onStop={stop} generating={generating} />
+          <Composer
+            onSend={send}
+            onStop={stop}
+            generating={generating}
+            allowFiles={!agent.is_image_generator}
+            initialFile={initialFile}
+            voiceReady={intent === "voice"}
+          />
         </div>
       </div>
 

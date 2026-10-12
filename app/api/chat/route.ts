@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import type { Agent, Message, Session } from "@/lib/types";
+import type { Agent, Attachment, Message, Session } from "@/lib/types";
+import { MAX_TEXT_CHARS } from "@/lib/files";
 import { GENERATED_BUCKET, type ChatEvent, type ChatRequest } from "@/lib/chat-protocol";
 import { anthropic } from "@/lib/ai/anthropic";
 import { buildMessages, buildSystem } from "@/lib/ai/context";
@@ -13,6 +14,23 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const MAX_MESSAGE_CHARS = 100_000;
+
+/** Accepts only well-formed attachments: storage paths inside attachments/, text within the cap. */
+function validAttachment(a: unknown): Attachment | null {
+  if (!a || typeof a !== "object") return null;
+  const { name, kind, path, text } = a as Record<string, unknown>;
+  const kinds = ["txt", "csv", "pdf", "docx", "xlsx", "image"];
+  if (typeof name !== "string" || !name || typeof kind !== "string" || !kinds.includes(kind)) return null;
+  if (path !== undefined && (typeof path !== "string" || !path.startsWith("attachments/"))) return null;
+  if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT_CHARS)) return null;
+  if (!path && !text) return null;
+  return {
+    name: name.slice(0, 200),
+    kind: kind as Attachment["kind"],
+    ...(typeof path === "string" ? { path } : {}),
+    ...(typeof text === "string" ? { text } : {}),
+  };
+}
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -28,7 +46,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
   const text = typeof body.message === "string" ? body.message.trim() : "";
-  if (!body.agentId || (!body.retry && !text) || text.length > MAX_MESSAGE_CHARS) {
+  const attachment = validAttachment(body.attachment);
+  if (body.attachment && !attachment) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  if (!body.agentId || (!body.retry && !text && !attachment) || text.length > MAX_MESSAGE_CHARS) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
   if (body.retry && !body.sessionId) {
@@ -57,7 +77,7 @@ export async function POST(req: NextRequest) {
   } else {
     const { data, error } = await supabase
       .from("sessions")
-      .insert({ agent_id: agent.id, title: titleFrom(text), messages: [] })
+      .insert({ agent_id: agent.id, title: titleFrom(text || attachment?.name || ""), messages: [] })
       .select("id, title, messages")
       .single<Pick<Session, "id" | "title" | "messages">>();
     if (error || !data) return NextResponse.json({ error: "save_failed" }, { status: 500 });
@@ -74,7 +94,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "nothing_to_retry" }, { status: 400 });
     }
   } else {
-    history = [...history, newMessage("user", text)];
+    const userMsg = newMessage("user", text);
+    if (attachment) userMsg.attachment = attachment;
+    history = [...history, userMsg];
     const { error } = await supabase
       .from("sessions")
       .update({ messages: history })
@@ -103,9 +125,13 @@ export async function POST(req: NextRequest) {
         const messages = [...history, assistant];
         // Auto-title only while the thread still has its fallback title (never overwrite a rename).
         let title: string | null | undefined;
-        const firstUser = messages.find((m) => m.role === "user")?.content ?? "";
-        if (session.title === titleFrom(firstUser)) {
-          title = await generateTitle(firstUser);
+        const first = messages.find((m) => m.role === "user");
+        const firstText = first?.content || first?.attachment?.name || "";
+        if (session.title === titleFrom(firstText)) {
+          title = await generateTitle(
+            first?.attachment ? `${firstText}
+(קובץ מצורף: ${first.attachment.name})` : firstText,
+          );
         }
         const update: { messages: Message[]; title?: string } = { messages };
         if (title) update.title = title;
@@ -132,7 +158,7 @@ export async function POST(req: NextRequest) {
           await finish(assistant);
         } else {
           // ---- Text route (streaming) ----
-          const messages = buildMessages(history);
+          const messages = await buildMessages(supabase, history);
           const s = anthropic().beta.messages.stream(
             {
               model: MODELS.text,
@@ -140,6 +166,8 @@ export async function POST(req: NextRequest) {
               system: buildSystem(agent),
               messages,
               output_config: { effort: "medium" },
+              // Automatic prompt caching: the growing thread prefix (incl. attached files) is re-read cheaply.
+              cache_control: { type: "ephemeral" },
               betas: ["server-side-fallback-2026-07-01"],
               fallbacks: "default",
             },

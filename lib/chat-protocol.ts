@@ -1,4 +1,4 @@
-import type { Message } from "./types";
+import type { Attachment, Message } from "./types";
 
 // Newline-delimited JSON events streamed from POST /api/chat.
 export type ChatEvent =
@@ -13,7 +13,7 @@ export type ChatRequest = {
   message: string;
   /** Re-run the answer for the last saved user message instead of adding a new one. */
   retry?: boolean;
-  attachment?: null;
+  attachment?: Attachment | null;
 };
 
 /** Bucket for generated images; the message stores the object path, shown via signed URL. */

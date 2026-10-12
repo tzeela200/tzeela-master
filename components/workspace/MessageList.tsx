@@ -4,7 +4,8 @@ import { memo, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Copy, Check, Share2, RotateCcw, Download, MessageSquare, AlertCircle } from "lucide-react";
-import type { Message } from "@/lib/types";
+import type { AttachmentKind, Message } from "@/lib/types";
+import { fileIcon } from "./AttachmentPreview";
 import { createClient } from "@/lib/supabase/client";
 import { GENERATED_BUCKET } from "@/lib/chat-protocol";
 
@@ -122,11 +123,14 @@ function MessageItem({
 
   if (isUser) {
     return (
-      <li className="flex justify-start">
-        <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-primary px-4 py-3 leading-relaxed text-white">
-          <span className="sr-only">את:</span>
-          <span dir="auto">{message.content}</span>
-        </div>
+      <li className="flex flex-col items-start gap-1">
+        <span className="sr-only">את:</span>
+        {message.attachment && <AttachmentChip name={message.attachment.name} kind={message.attachment.kind} path={message.attachment.kind === "image" ? message.attachment.path : undefined} />}
+        {message.content && (
+          <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-primary px-4 py-3 leading-relaxed text-white">
+            <span dir="auto">{message.content}</span>
+          </div>
+        )}
       </li>
     );
   }
@@ -144,6 +148,25 @@ function MessageItem({
       <MessageActions message={message} canRetry={canRetry} onRetry={onRetry} />
     </li>
   );
+}
+
+function AttachmentChip({ name, kind, path }: { name: string; kind: AttachmentKind; path?: string }) {
+  const Icon = fileIcon(kind);
+  return (
+    <div className="flex max-w-[85%] items-center gap-2 rounded-input border border-border bg-surface px-3 py-2">
+      {path ? <AttachedImage path={path} /> : <Icon className="size-5 shrink-0 text-primary" aria-hidden />}
+      <span className="sr-only">קובץ מצורף:</span>
+      <span className="truncate text-[14px]" dir="auto">
+        {name}
+      </span>
+    </div>
+  );
+}
+
+function AttachedImage({ path }: { path: string }) {
+  const { url } = useSignedUrl(path);
+  // eslint-disable-next-line @next/next/no-img-element -- private signed URL
+  return url ? <img src={url} alt="" className="size-12 shrink-0 rounded-md object-cover" /> : <span className="size-12 shrink-0 animate-pulse rounded-md bg-border" />;
 }
 
 function useSignedUrl(path: string) {
