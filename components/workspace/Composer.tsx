@@ -5,6 +5,7 @@ import { SendHorizontal, Square, Paperclip } from "lucide-react";
 import type { Attachment } from "@/lib/types";
 import { ACCEPT } from "@/lib/files";
 import { useToast } from "../Toast";
+import { useOnline } from "@/lib/useOnline";
 import { useAttachment } from "./useAttachment";
 import { AttachmentPreview } from "./AttachmentPreview";
 import { VoiceButton } from "./VoiceButton";
@@ -34,6 +35,8 @@ export function Composer({
   const fileRef = useRef<HTMLInputElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
   const { state: file, attach, clear } = useAttachment();
+  // Offline: AI actions are disabled; text typed so far is kept for when the connection returns.
+  const online = useOnline();
 
   // Auto-grow up to ~8 lines
   useEffect(() => {
@@ -55,7 +58,7 @@ export function Composer({
 
   const fileReady = file?.status === "ready";
   const fileBusy = file?.status === "processing";
-  const canSend = !generating && !fileBusy && (text.trim().length > 0 || fileReady);
+  const canSend = online && !generating && !fileBusy && (text.trim().length > 0 || fileReady);
 
   async function submit() {
     if (!canSend) return;
@@ -108,7 +111,7 @@ export function Composer({
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            disabled={generating}
+            disabled={generating || !online}
             aria-label="צירוף קובץ"
             className={iconBtn}
           >
@@ -117,7 +120,7 @@ export function Composer({
         )}
         <VoiceButton
           ref={micRef}
-          disabled={generating}
+          disabled={generating || !online}
           highlight={voiceReady}
           onText={(t) => setText((prev) => (prev.trim() ? `${prev.trimEnd()} ${t}` : t))}
           onMessage={(m, kind) => toast(m, kind)}
@@ -132,7 +135,7 @@ export function Composer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="מה רוצים לעשות?"
+          placeholder={online ? "מה רוצים לעשות?" : "אין חיבור. אפשר לכתוב ולשלוח כשהחיבור יחזור."}
           dir="auto"
           className="max-h-[200px] min-h-12 min-w-0 flex-1 resize-none rounded-input border border-border bg-bg px-3 py-3 leading-normal outline-none transition-colors duration-150 focus:border-primary"
         />

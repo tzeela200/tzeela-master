@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Heebo } from "next/font/google";
 import "./globals.css";
+import { PwaSetup } from "@/components/PwaSetup";
 
 const heebo = Heebo({
   subsets: ["hebrew", "latin"],
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
   title: "צאלה",
   description: "שולחן עבודה אישי חכם",
   applicationName: "צאלה",
+  appleWebApp: { capable: true, title: "צאלה", statusBarStyle: "default" },
   // Link previews (WhatsApp, Facebook, etc.). The image itself comes from app/opengraph-image.jpg.
   openGraph: {
     type: "website",
@@ -38,7 +40,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="he" dir="rtl" className={heebo.variable}>
-      <body className="min-h-dvh antialiased">{children}</body>
+      <body className="min-h-dvh antialiased">
+        {children}
+        <PwaSetup />
+      </body>
     </html>
   );
 }

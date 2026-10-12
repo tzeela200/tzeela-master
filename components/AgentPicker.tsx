@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import type { Agent } from "@/lib/types";
@@ -89,9 +88,17 @@ export function AgentPicker({
                   {content}
                 </label>
               ) : (
-                <Link href={`/agents/${a.id}?new=${Date.now()}&intent=voice`} className={rowCls}>
+                <button
+                  type="button"
+                  className={`${rowCls} w-full text-start`}
+                  onClick={() => {
+                    // Timestamp on click (not in render) keeps server and client HTML identical.
+                    onClose();
+                    router.push(`/agents/${a.id}?new=${Date.now()}&intent=voice`);
+                  }}
+                >
                   {content}
-                </Link>
+                </button>
               )}
             </li>
           );
