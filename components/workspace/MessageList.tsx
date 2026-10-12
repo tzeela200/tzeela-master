@@ -1,9 +1,8 @@
 "use client";
 
-import { memo, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Copy, Check, Share2, RotateCcw, Download, MessageSquare, AlertCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Markdown } from "../Markdown";
+import { Copy, Check, Share2, RotateCcw, Download, MessageSquare, AlertCircle, Bookmark, BookmarkCheck, Loader2 } from "lucide-react";
 import type { AttachmentKind, Message } from "@/lib/types";
 import { fileIcon } from "./AttachmentPreview";
 import { createClient } from "@/lib/supabase/client";
@@ -19,9 +18,11 @@ type Props = {
   failure: { message: string; stopped?: boolean } | null;
   busy: boolean;
   onRetry: () => void;
+  /** Saves an answer to the outputs archive; resolves true on success. */
+  onSave: (messageId: string) => Promise<boolean>;
 };
 
-export function MessageList({ messages, pending, isImageAgent, failure, busy, onRetry }: Props) {
+export function MessageList({ messages, pending, isImageAgent, failure, busy, onRetry, onSave }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,6 +49,7 @@ export function MessageList({ messages, pending, isImageAgent, failure, busy, on
             message={m}
             canRetry={!busy && i === lastAssistantIdx && i === messages.length - 1}
             onRetry={onRetry}
+            onSave={onSave}
           />
         ))}
         {pending && (
@@ -95,29 +97,17 @@ export function MessageList({ messages, pending, isImageAgent, failure, busy, on
   );
 }
 
-const Markdown = memo(function Markdown({ text }: { text: string }) {
-  return (
-    <div dir="auto">
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-        }}
-      >
-        {text}
-      </ReactMarkdown>
-    </div>
-  );
-});
 
 function MessageItem({
   message,
   canRetry,
   onRetry,
+  onSave,
 }: {
   message: Message;
   canRetry: boolean;
   onRetry: () => void;
+  onSave: (messageId: string) => Promise<boolean>;
 }) {
   const isUser = message.role === "user";
 
@@ -145,7 +135,7 @@ function MessageItem({
           <Markdown text={message.content} />
         </div>
       )}
-      <MessageActions message={message} canRetry={canRetry} onRetry={onRetry} />
+      <MessageActions message={message} canRetry={canRetry} onRetry={onRetry} onSave={onSave} />
     </li>
   );
 }
@@ -216,12 +206,16 @@ function MessageActions({
   message,
   canRetry,
   onRetry,
+  onSave,
 }: {
   message: Message;
   canRetry: boolean;
   onRetry: () => void;
+  onSave: (messageId: string) => Promise<boolean>;
 }) {
   const [copied, setCopied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const saved = !!message.outputId;
   const isImage = !!message.imageUrl;
 
   async function copy() {
@@ -279,7 +273,28 @@ function MessageActions({
     "flex size-11 items-center justify-center rounded-button text-secondary transition-colors duration-150 hover:bg-primary-hover hover:text-primary";
 
   return (
-    <div className="mt-1 flex items-center gap-0.5" role="group" aria-label="פעולות על התשובה">
+    <div className="mt-1 flex flex-wrap items-center justify-end gap-0.5" role="group" aria-label="פעולות על התשובה">
+      <button
+        type="button"
+        disabled={saved || saving}
+        onClick={async () => {
+          setSaving(true);
+          await onSave(message.id);
+          setSaving(false);
+        }}
+        className={`flex h-11 items-center gap-1.5 rounded-button px-3 text-[14px] font-medium transition-colors duration-150 ${
+          saved ? "text-success" : "text-primary hover:bg-primary-hover"
+        }`}
+      >
+        {saving ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+        ) : saved ? (
+          <BookmarkCheck className="size-4" aria-hidden />
+        ) : (
+          <Bookmark className="size-4" aria-hidden />
+        )}
+        {saved ? "נשמר כתוצר" : "שמור כתוצר"}
+      </button>
       <button type="button" onClick={copy} className={btn} aria-label={copied ? "הועתק" : "העתק"}>
         {copied ? <Check className="size-4 text-success" aria-hidden /> : <Copy className="size-4" aria-hidden />}
       </button>

@@ -30,6 +30,8 @@ export type Message = {
   imageUrl?: string;
   /** One file per user message */
   attachment?: Attachment;
+  /** Set once this answer was saved to the outputs archive */
+  outputId?: string;
   createdAt: string;
 };
 
@@ -43,6 +45,8 @@ export type Session = {
 
 export type OutputStatus = "pending" | "review" | "done";
 export type OutputType = "text" | "pdf" | "docx" | "xlsx" | "csv" | "image";
+
+export const OUTPUTS_BUCKET = "outputs";
 
 export type AgentOutput = {
   id: string;

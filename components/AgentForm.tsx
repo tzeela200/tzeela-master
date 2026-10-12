@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { Agent } from "@/lib/types";
+import { OUTPUTS_BUCKET, type Agent } from "@/lib/types";
 import { normalizeAgent, validateAgent, type AgentErrors, type AgentInput } from "@/lib/agents";
 import { AGENT_ICONS, DEFAULT_ICON } from "./AgentIcon";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -76,8 +76,18 @@ export function AgentForm({ agent, categories }: { agent?: Agent; categories: st
   async function onDelete() {
     if (!agent) return;
     setDeleting(true);
+    const supabase = createClient();
+    // Output files are identified safely through this agent's rows, before the cascade removes them.
+    const { data: files } = await supabase
+      .from("agent_outputs")
+      .select("file_url")
+      .eq("agent_id", agent.id)
+      .not("file_url", "is", null);
     // sessions + agent_outputs are removed by ON DELETE CASCADE in the DB.
-    const { error } = await createClient().from("agents").delete().eq("id", agent.id);
+    const { error } = await supabase.from("agents").delete().eq("id", agent.id);
+    if (!error && files?.length) {
+      await supabase.storage.from(OUTPUTS_BUCKET).remove(files.map((f) => f.file_url as string));
+    }
     setDeleting(false);
     if (error) {
       setConfirmDelete(false);

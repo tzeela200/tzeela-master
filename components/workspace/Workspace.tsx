@@ -174,6 +174,25 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
     }
   }
 
+  async function saveOutput(messageId: string): Promise<boolean> {
+    if (!sessionIdRef.current) return false;
+    try {
+      const res = await fetch("/api/outputs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId: agent.id, sessionId: sessionIdRef.current, messageId }),
+      });
+      const data = (await res.json()) as { ok?: boolean; outputId?: string };
+      if (!res.ok || !data.outputId) throw new Error();
+      setMessages((list) => list.map((m) => (m.id === messageId ? { ...m, outputId: data.outputId } : m)));
+      toast("נשמר בתוצרים");
+      return true;
+    } catch {
+      toast("התוצר לא נשמר.", "error");
+      return false;
+    }
+  }
+
   function stop() {
     abortRef.current?.abort();
   }
@@ -288,6 +307,7 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
               failure={failure}
               busy={generating}
               onRetry={retry}
+              onSave={saveOutput}
             />
           </div>
 
