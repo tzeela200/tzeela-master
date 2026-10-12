@@ -20,9 +20,11 @@ type Props = {
   onRetry: () => void;
   /** Saves an answer to the outputs archive; resolves true on success. */
   onSave: (messageId: string) => Promise<boolean>;
+  /** Extra line under the empty-thread message (Master Agent knowledge source). */
+  emptyNote?: string;
 };
 
-export function MessageList({ messages, pending, isImageAgent, failure, busy, onRetry, onSave }: Props) {
+export function MessageList({ messages, pending, isImageAgent, failure, busy, onRetry, onSave, emptyNote }: Props) {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -34,6 +36,7 @@ export function MessageList({ messages, pending, isImageAgent, failure, busy, on
       <div className="flex flex-1 flex-col items-center justify-center px-4 text-center text-secondary">
         <MessageSquare className="mb-3 size-8 text-primary" aria-hidden />
         <p>זה נושא חדש. אפשר להתחיל לכתוב.</p>
+        {emptyNote && <p className="mt-2 max-w-sm text-[14px]">{emptyNote}</p>}
       </div>
     );
   }

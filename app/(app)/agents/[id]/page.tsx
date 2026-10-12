@@ -38,8 +38,19 @@ export default async function WorkspacePage({
     session = data;
   }
 
+  // Master Agent: how many saved outputs in its category it can draw on (shown in the empty state).
+  let masterCount: number | null = null;
+  if (agent.is_master) {
+    const { count } = await supabase
+      .from("agent_outputs")
+      .select("id", { count: "exact", head: true })
+      .ilike("category", agent.category.trim());
+    masterCount = count ?? 0;
+  }
+
   return (
     <Workspace
+      masterCount={masterCount}
       key={session?.id ?? `new-${sp.new ?? "default"}`}
       agent={agent}
       sessions={(sessions ?? []) as SessionSummary[]}

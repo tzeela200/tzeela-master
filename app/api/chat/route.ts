@@ -5,6 +5,7 @@ import { MAX_TEXT_CHARS } from "@/lib/files";
 import { GENERATED_BUCKET, type ChatEvent, type ChatRequest } from "@/lib/chat-protocol";
 import { anthropic } from "@/lib/ai/anthropic";
 import { buildMessages, buildSystem } from "@/lib/ai/context";
+import { masterContext, masterOutputs } from "@/lib/ai/master";
 import { buildImagePrompt, generateImage } from "@/lib/ai/image";
 import { generateTitle } from "@/lib/ai/title";
 import { MODELS } from "@/lib/ai/models";
@@ -159,11 +160,15 @@ export async function POST(req: NextRequest) {
         } else {
           // ---- Text route (streaming) ----
           const messages = await buildMessages(supabase, history);
+          // Master Agent: adds summaries of saved outputs in its category — never other threads.
+          const system = agent.is_master
+            ? [buildSystem(agent), masterContext(agent, await masterOutputs(supabase, agent))].join("\n\n")
+            : buildSystem(agent);
           const s = anthropic().beta.messages.stream(
             {
               model: MODELS.text,
               max_tokens: 64000,
-              system: buildSystem(agent),
+              system,
               messages,
               output_config: { effort: "medium" },
               // Automatic prompt caching: the growing thread prefix (incl. attached files) is re-read cheaply.

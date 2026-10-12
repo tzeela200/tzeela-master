@@ -21,6 +21,8 @@ type Props = {
   sessions: SessionSummary[];
   /** null = a fresh thread that is created on the server with its first message */
   session: { id: string; title: string | null; messages: Message[] } | null;
+  /** Master Agent only: number of saved outputs in its category */
+  masterCount?: number | null;
 };
 
 const ERR_TEXT = "לא הצלחנו לקבל תשובה.";
@@ -29,7 +31,7 @@ const ERR_OFFLINE = "אין כרגע חיבור לאינטרנט.";
 
 // Each thread mounts its own Workspace instance (keyed by session id in the page),
 // so no message state can carry over between threads.
-export function Workspace({ agent, sessions: initialSessions, session }: Props) {
+export function Workspace({ agent, sessions: initialSessions, session, masterCount = null }: Props) {
   const toast = useToast();
   const [sessions, setSessions] = useState(initialSessions);
   const [sessionId, setSessionId] = useState<string | null>(session?.id ?? null);
@@ -308,6 +310,13 @@ export function Workspace({ agent, sessions: initialSessions, session }: Props) 
               busy={generating}
               onRetry={retry}
               onSave={saveOutput}
+              emptyNote={
+                agent.is_master
+                  ? masterCount
+                    ? `סוכן־על: עונה על בסיס ${masterCount === 1 ? "תוצר שמור אחד" : `${masterCount} תוצרים שמורים`} בקטגוריה "${agent.category}".`
+                    : `סוכן־על: עדיין אין תוצרים שמורים בקטגוריה "${agent.category}".`
+                  : undefined
+              }
             />
           </div>
 
