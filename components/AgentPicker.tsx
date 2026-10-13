@@ -15,6 +15,7 @@ export function AgentPicker({
   agents,
   intent,
   extraQuery = "",
+  file = null,
   onClose,
 }: {
   open: boolean;
@@ -23,6 +24,8 @@ export function AgentPicker({
   intent: "voice" | "upload" | "chat";
   /** Appended to the new thread's URL, e.g. "&niche=…&project=…" */
   extraQuery?: string;
+  /** upload: a file that was already dropped on the page */
+  file?: File | null;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -73,7 +76,20 @@ export function AgentPicker({
           );
           return (
             <li key={a.id}>
-              {intent === "upload" ? (
+              {intent === "upload" && file ? (
+                // File already chosen (dragged in): picking the agent opens the thread with it.
+                <button
+                  type="button"
+                  className={`${rowCls} w-full text-start`}
+                  onClick={() => {
+                    setPendingFile(a.id, file);
+                    onClose();
+                    router.push(`/agents/${a.id}?new=${Date.now()}&intent=upload${extraQuery}`);
+                  }}
+                >
+                  {content}
+                </button>
+              ) : intent === "upload" ? (
                 // Choosing the agent opens the file dialog directly (same user gesture).
                 <label className={`${rowCls} has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-primary`}>
                   <input

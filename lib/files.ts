@@ -34,6 +34,14 @@ export const FILE_ERRORS = {
 
 export type FileErrorKey = keyof typeof FILE_ERRORS;
 
+/** Quick check before routing a dropped file to an agent (full checks run when it is attached). */
+export function droppedFileProblem(file: File): string | null {
+  if (!kindOf(file.name)) return FILE_ERRORS.unsupported;
+  if (file.size > MAX_FILE_BYTES) return FILE_ERRORS.tooBig;
+  if (file.size === 0) return FILE_ERRORS.empty;
+  return null;
+}
+
 export function formatBytes(n: number) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;

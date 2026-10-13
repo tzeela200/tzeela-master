@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload } from "lucide-react";
+import { useFileDrop } from "@/lib/useFileDrop";
 
 type Result = {
   ok?: boolean;
@@ -28,6 +29,7 @@ export function RegistryImport() {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
+  const { dragging, dropProps } = useFileDrop((f) => onFile(f), { disabled: busy });
 
   async function onFile(file: File) {
     setBusy(true);
@@ -60,15 +62,25 @@ export function RegistryImport() {
         aria-label="בחירת קובץ קטלוג"
         onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
       />
-      <button
-        type="button"
-        disabled={busy}
-        onClick={() => input.current?.click()}
-        className="flex h-12 items-center gap-2 rounded-button bg-primary px-5 text-[15px] font-medium text-white transition-colors duration-150 disabled:opacity-60"
+      <div
+        {...dropProps}
+        className={`flex flex-col items-start gap-3 rounded-card border-2 border-dashed p-4 transition-colors duration-150 sm:flex-row sm:items-center ${
+          dragging ? "border-primary bg-primary-hover" : "border-border"
+        }`}
       >
-        <Upload className="size-5" aria-hidden />
-        {busy ? "מייבא…" : "ייבוא קטלוג סקילים"}
-      </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => input.current?.click()}
+          className="flex h-12 items-center gap-2 rounded-button bg-primary px-5 text-[15px] font-medium text-white transition-colors duration-150 disabled:opacity-60"
+        >
+          <Upload className="size-5" aria-hidden />
+          {busy ? "מייבא…" : "ייבוא קטלוג סקילים"}
+        </button>
+        <span className="text-[14px] text-secondary">
+          {dragging ? "שחררי כאן" : "או לגרור לכאן את registry-bundle.json"}
+        </span>
+      </div>
       <div role="status" aria-live="polite" className="mt-4 text-[15px]">
         {result?.ok && (
           <p>

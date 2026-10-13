@@ -16,6 +16,8 @@ import { ThreadDrawer, ThreadPanel } from "./ThreadSelector";
 import { MessageList, type Pending } from "./MessageList";
 import { Composer } from "./Composer";
 import { ScopeChip } from "./ScopeChip";
+import { DropOverlay } from "../DropOverlay";
+import { useFileDrop } from "@/lib/useFileDrop";
 import type { Niche, Project, Scope } from "@/lib/niches";
 
 type Props = {
@@ -68,6 +70,8 @@ export function Workspace({
   const abortRef = useRef<AbortController | null>(null);
   const intent = useSearchParams().get("intent");
   const [initialFile, setInitialFile] = useState<File | null>(null);
+  // Dropping a file anywhere on the conversation attaches it, like the paperclip.
+  const { dragging, dropProps } = useFileDrop(setInitialFile, { disabled: agent.is_image_generator });
 
   // "העלאת קובץ" from the dashboard: the file picked there is attached here.
   // Consumed once — the guard survives React's double-invoked effects in development.
@@ -288,7 +292,8 @@ export function Workspace({
       <div className="flex min-h-0 flex-1">
         <ThreadPanel agentId={agent.id} sessions={sessions} currentId={sessionId} />
 
-        <div className="flex min-w-0 flex-1 flex-col">
+        <div className="relative flex min-w-0 flex-1 flex-col" {...dropProps}>
+          {dragging && <DropOverlay label="שחררי כאן כדי לצרף את הקובץ" />}
           {/* Thread bar */}
           <div className="flex shrink-0 items-center gap-1 border-b border-border bg-surface/60 px-2 py-1 md:px-4">
             <button

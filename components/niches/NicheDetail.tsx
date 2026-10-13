@@ -32,6 +32,9 @@ import {
 import { AgentPicker } from "../AgentPicker";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { useToast } from "../Toast";
+import { DropOverlay } from "../DropOverlay";
+import { useFileDrop } from "@/lib/useFileDrop";
+import { droppedFileProblem } from "@/lib/files";
 import { NicheForm } from "./NicheForm";
 
 export type NicheThread = {
@@ -122,6 +125,14 @@ export function NicheDetail({
   const [subForm, setSubForm] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [picker, setPicker] = useState(false);
+  // A file dropped on the niche page opens a new thread in this niche with the file attached.
+  const [dropped, setDropped] = useState<File | null>(null);
+  const { dragging, dropProps } = useFileDrop((f) => {
+    const problem = droppedFileProblem(f);
+    if (problem) return toast(problem, "error");
+    setDropped(f);
+    setPicker(true);
+  });
   const [addingProject, setAddingProject] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -239,7 +250,8 @@ export function NicheDetail({
   const parent = niche.parent_id ? niches.find((n) => n.id === niche.parent_id) : null;
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6 md:px-8 md:py-10">
+    <main className="relative mx-auto min-h-dvh max-w-5xl px-4 py-6 md:px-8 md:py-10" {...dropProps}>
+      {dragging && <DropOverlay label="שחררי כאן כדי לפתוח נושא חדש עם הקובץ בנישה" />}
       {/* Header */}
       <header className="mb-2 flex items-center gap-1">
         <Link href={parent ? `/niches/${parent.id}` : "/niches"} aria-label="חזרה" className={`-ms-2 ${iconBtn} text-ink`}>
@@ -504,11 +516,21 @@ export function NicheDetail({
       />
       <AgentPicker
         open={picker}
-        title={project ? `נושא חדש ב${project.name}: בחירת סוכן` : `נושא חדש ב${niche.name}: בחירת סוכן`}
+        title={
+          dropped
+            ? `לאיזה סוכן לצרף את "${dropped.name}"?`
+            : project
+              ? `נושא חדש ב${project.name}: בחירת סוכן`
+              : `נושא חדש ב${niche.name}: בחירת סוכן`
+        }
         agents={agents}
-        intent="chat"
+        intent={dropped ? "upload" : "chat"}
+        file={dropped}
         extraQuery={scopeQuery}
-        onClose={() => setPicker(false)}
+        onClose={() => {
+          setPicker(false);
+          setDropped(null);
+        }}
       />
     </main>
   );

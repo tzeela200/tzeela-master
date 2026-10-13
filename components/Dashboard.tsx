@@ -7,6 +7,10 @@ import { matchesSearch } from "@/lib/agents";
 import { AgentGrid, type AgentWithCount } from "./AgentCard";
 import { AgentPicker } from "./AgentPicker";
 import { EmptyState } from "./EmptyState";
+import { DropOverlay } from "./DropOverlay";
+import { useToast } from "./Toast";
+import { useFileDrop } from "@/lib/useFileDrop";
+import { droppedFileProblem } from "@/lib/files";
 
 export type RecentItem = {
   kind: "thread" | "output";
@@ -31,8 +35,20 @@ export function Dashboard({
   /** Niche zones + "your recent actions" (rendered on the server) */
   zones?: React.ReactNode;
 }) {
+  const toast = useToast();
   const [query, setQuery] = useState("");
   const [picker, setPicker] = useState<"voice" | "upload" | null>(null);
+  // A file dropped anywhere on the page: same as "העלאת קובץ", then choose the agent.
+  const [dropped, setDropped] = useState<File | null>(null);
+  const { dragging, dropProps } = useFileDrop(
+    (f) => {
+      const problem = droppedFileProblem(f);
+      if (problem) return toast(problem, "error");
+      setDropped(f);
+      setPicker("upload");
+    },
+    { disabled: agents.length === 0 },
+  );
 
   const filtered = useMemo(() => agents.filter((a) => matchesSearch(a, query)), [agents, query]);
   const favorites = useMemo(
@@ -42,7 +58,8 @@ export function Dashboard({
   const searching = query.trim().length > 0;
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-10">
+    <main className="relative mx-auto min-h-dvh max-w-6xl px-4 py-6 md:px-8 md:py-10" {...dropProps}>
+      {dragging && <DropOverlay label="שחררי כאן, ואז בחרי לאיזה סוכן לצרף" />}
       {/* Header */}
       <header className="mb-6 flex items-center gap-3">
         <h1 className="flex-1">{greeting}</h1>
@@ -166,9 +183,19 @@ export function Dashboard({
       <AgentPicker
         open={picker !== null}
         intent={picker ?? "voice"}
-        title={picker === "upload" ? "לאיזה סוכן לצרף את הקובץ?" : "עם איזה סוכן לדבר?"}
+        title={
+          picker === "upload"
+            ? dropped
+              ? `לאיזה סוכן לצרף את "${dropped.name}"?`
+              : "לאיזה סוכן לצרף את הקובץ?"
+            : "עם איזה סוכן לדבר?"
+        }
         agents={agents}
-        onClose={() => setPicker(null)}
+        file={dropped}
+        onClose={() => {
+          setPicker(null);
+          setDropped(null);
+        }}
       />
     </main>
   );
