@@ -14,12 +14,15 @@ export function AgentPicker({
   title,
   agents,
   intent,
+  extraQuery = "",
   onClose,
 }: {
   open: boolean;
   title: string;
   agents: Agent[];
-  intent: "voice" | "upload";
+  intent: "voice" | "upload" | "chat";
+  /** Appended to the new thread's URL, e.g. "&niche=…&project=…" */
+  extraQuery?: string;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -82,7 +85,7 @@ export function AgentPicker({
                       if (!f) return;
                       setPendingFile(a.id, f);
                       onClose();
-                      router.push(`/agents/${a.id}?new=${Date.now()}&intent=upload`);
+                      router.push(`/agents/${a.id}?new=${Date.now()}&intent=upload${extraQuery}`);
                     }}
                   />
                   {content}
@@ -94,7 +97,9 @@ export function AgentPicker({
                   onClick={() => {
                     // Timestamp on click (not in render) keeps server and client HTML identical.
                     onClose();
-                    router.push(`/agents/${a.id}?new=${Date.now()}&intent=voice`);
+                    router.push(
+                      `/agents/${a.id}?new=${Date.now()}${intent === "voice" ? "&intent=voice" : ""}${extraQuery}`,
+                    );
                   }}
                 >
                   {content}

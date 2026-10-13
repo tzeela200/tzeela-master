@@ -15,6 +15,8 @@ import { useToast } from "../Toast";
 import { ThreadDrawer, ThreadPanel } from "./ThreadSelector";
 import { MessageList, type Pending } from "./MessageList";
 import { Composer } from "./Composer";
+import { ScopeChip } from "./ScopeChip";
+import type { Niche, Project, Scope } from "@/lib/niches";
 
 type Props = {
   agent: Agent;
@@ -23,6 +25,10 @@ type Props = {
   session: { id: string; title: string | null; messages: Message[] } | null;
   /** Master Agent only: number of saved outputs in its category */
   masterCount?: number | null;
+  /** Niche/project of this thread (saved), or the one a new thread was opened with */
+  scope: Scope;
+  niches: Niche[];
+  projects: Project[];
 };
 
 const ERR_TEXT = "לא הצלחנו לקבל תשובה.";
@@ -31,8 +37,21 @@ const ERR_OFFLINE = "אין כרגע חיבור לאינטרנט.";
 
 // Each thread mounts its own Workspace instance (keyed by session id in the page),
 // so no message state can carry over between threads.
-export function Workspace({ agent, sessions: initialSessions, session, masterCount = null }: Props) {
+export function Workspace({
+  agent,
+  sessions: initialSessions,
+  session,
+  masterCount = null,
+  scope: initialScope,
+  niches,
+  projects,
+}: Props) {
   const toast = useToast();
+  const [scope, setScope] = useState<Scope>(initialScope);
+  const scopeRef = useRef(scope);
+  useEffect(() => {
+    scopeRef.current = scope;
+  }, [scope]);
   const [sessions, setSessions] = useState(initialSessions);
   const [sessionId, setSessionId] = useState<string | null>(session?.id ?? null);
   const [title, setTitle] = useState<string | null>(session?.title ?? null);
@@ -86,7 +105,14 @@ export function Workspace({ agent, sessions: initialSessions, session, masterCou
       res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...req, agentId: agent.id, sessionId: sessionIdRef.current }),
+        body: JSON.stringify({
+          ...req,
+          agentId: agent.id,
+          sessionId: sessionIdRef.current,
+          // used only when this request creates the thread
+          nicheId: scopeRef.current.nicheId,
+          projectId: scopeRef.current.projectId,
+        }),
         signal: controller.signal,
       });
     } catch {
@@ -214,6 +240,26 @@ export function Workspace({ agent, sessions: initialSessions, session, masterCou
     upsertSummary(res.data.id, res.data.title);
   }
 
+  /** New thread: remembered until the first message. Saved thread: updated right away. */
+  async function changeScope(next: Scope): Promise<boolean> {
+    if (!sessionIdRef.current) {
+      setScope(next);
+      return true;
+    }
+    const { error } = await createClient()
+      .from("sessions")
+      .update({ niche_id: next.nicheId, project_id: next.projectId })
+      .eq("id", sessionIdRef.current)
+      .eq("agent_id", agent.id);
+    if (error) {
+      toast("השיוך לא נשמר.", "error");
+      return false;
+    }
+    setScope(next);
+    toast(next.nicheId ? "הנושא שויך לנישה" : "השיוך לנישה הוסר");
+    return true;
+  }
+
   const threadLabel = title || "נושא חדש";
 
   return (
@@ -297,6 +343,7 @@ export function Workspace({ agent, sessions: initialSessions, session, masterCou
                     <Pencil className="size-4" aria-hidden />
                   </button>
                 )}
+                <ScopeChip scope={scope} niches={niches} projects={projects} onChange={changeScope} />
               </>
             )}
           </div>

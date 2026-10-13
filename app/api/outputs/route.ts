@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { OUTPUTS_BUCKET, type Agent, type AgentOutput, type Message, type Session } from "@/lib/types";
 import { GENERATED_BUCKET } from "@/lib/chat-protocol";
 import { summarizeOutput } from "@/lib/ai/summary";
+import { logActivity } from "@/lib/niches";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,10 +26,10 @@ export async function POST(req: NextRequest) {
     supabase.from("agents").select("*").eq("id", agentId).maybeSingle<Agent>(),
     supabase
       .from("sessions")
-      .select("id, messages")
+      .select("id, messages, niche_id, project_id")
       .eq("id", sessionId)
       .eq("agent_id", agentId)
-      .maybeSingle<Pick<Session, "id" | "messages">>(),
+      .maybeSingle<Pick<Session, "id" | "messages" | "niche_id" | "project_id">>(),
   ]);
   if (!agent || !session) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
@@ -67,7 +68,7 @@ export async function POST(req: NextRequest) {
     if (up.error) return NextResponse.json({ error: "save_failed" }, { status: 500 });
   }
 
-  const { error: insErr } = await supabase.from("agent_outputs").insert({
+  const row = {
     id: outputId,
     agent_id: agentId,
     category: agent.category,
@@ -75,7 +76,17 @@ export async function POST(req: NextRequest) {
     summary_text: summary,
     file_url: filePath,
     status: "pending",
+  };
+  // The output inherits the thread's niche/project (columns from migration 0003;
+  // falls back to the old row shape until it is run).
+  let { error: insErr } = await supabase.from("agent_outputs").insert({
+    ...row,
+    session_id: sessionId,
+    niche_id: session.niche_id ?? null,
+    project_id: session.project_id ?? null,
   });
+  if (insErr?.code === "PGRST204" || insErr?.code === "42703")
+    ({ error: insErr } = await supabase.from("agent_outputs").insert(row));
   if (insErr) {
     await supabase.storage.from(OUTPUTS_BUCKET).remove([filePath]);
     return NextResponse.json({ error: "save_failed" }, { status: 500 });
@@ -84,6 +95,16 @@ export async function POST(req: NextRequest) {
   // Mark the message as saved so it can't be archived twice.
   const messages = session.messages.map((m, i) => (i === idx ? { ...m, outputId } : m));
   await supabase.from("sessions").update({ messages }).eq("id", sessionId).eq("agent_id", agentId);
+
+  await logActivity(supabase, {
+    action: "save_output",
+    entity_type: "output",
+    entity_id: outputId,
+    title: `שמרת תוצר: ${summary.slice(0, 80)}`,
+    niche_id: session.niche_id ?? null,
+    project_id: session.project_id ?? null,
+    agent_id: agentId,
+  });
 
   return NextResponse.json({ ok: true, outputId });
 }

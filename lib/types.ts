@@ -41,6 +41,8 @@ export type Session = {
   title: string | null;
   messages: Message[];
   updated_at: string;
+  niche_id?: string | null;
+  project_id?: string | null;
 };
 
 export type OutputStatus = "pending" | "review" | "done";
@@ -57,6 +59,10 @@ export type AgentOutput = {
   file_url: string | null;
   status: OutputStatus;
   created_at: string;
+  /** Migration 0003 */
+  session_id?: string | null;
+  niche_id?: string | null;
+  project_id?: string | null;
 };
 
 export const STATUS_LABELS: Record<OutputStatus, string> = {

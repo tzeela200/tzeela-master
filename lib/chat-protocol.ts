@@ -14,6 +14,9 @@ export type ChatRequest = {
   /** Re-run the answer for the last saved user message instead of adding a new one. */
   retry?: boolean;
   attachment?: Attachment | null;
+  /** New threads only: the niche / project the thread belongs to. */
+  nicheId?: string | null;
+  projectId?: string | null;
 };
 
 /** Bucket for generated images; the message stores the object path, shown via signed URL. */

@@ -1,16 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import type { AgentOutput } from "@/lib/types";
 import { OutputsArchive, type OutputRow } from "@/components/outputs/OutputsArchive";
+import { listNiches, nichePath } from "@/lib/niches";
 
 export default async function OutputsPage({ searchParams }: { searchParams: Promise<{ open?: string }> }) {
   const { open } = await searchParams;
   const supabase = await createClient();
-  const [{ data: outputs, error }, { data: agents }] = await Promise.all([
+  const [{ data: outputs, error }, { data: agents }, niches] = await Promise.all([
     supabase
       .from("agent_outputs")
       .select("*, agents(name)")
       .order("created_at", { ascending: false }),
     supabase.from("agents").select("id, name").order("name"),
+    listNiches(supabase),
   ]);
 
   if (error) {
@@ -31,5 +33,14 @@ export default async function OutputsPage({ searchParams }: { searchParams: Prom
     }),
   );
 
-  return <OutputsArchive initial={rows} agents={agents ?? []} openId={open ?? null} />;
+  // The niche filter appears once outputs carry a niche (migration 0003).
+  const hasNicheColumn = (outputs ?? []).some((o) => "niche_id" in o);
+  return (
+    <OutputsArchive
+      initial={rows}
+      agents={agents ?? []}
+      niches={hasNicheColumn ? niches.map((n) => ({ id: n.id, name: nichePath(n, niches) })) : []}
+      openId={open ?? null}
+    />
+  );
 }

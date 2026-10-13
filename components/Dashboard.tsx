@@ -23,10 +23,13 @@ export function Dashboard({
   greeting,
   agents,
   recent,
+  zones,
 }: {
   greeting: string;
   agents: AgentWithCount[];
   recent: RecentItem[];
+  /** Niche zones + "your recent actions" (rendered on the server) */
+  zones?: React.ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const [picker, setPicker] = useState<"voice" | "upload" | null>(null);
@@ -114,6 +117,7 @@ export function Dashboard({
         </section>
       ) : (
         <>
+          {zones}
           {favorites.length > 0 && (
             <section id="favorites" aria-labelledby="fav-title" className="mb-10 scroll-mt-6">
               <h2 id="fav-title" className="mb-4 text-[18px] md:text-[22px]">

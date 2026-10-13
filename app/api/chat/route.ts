@@ -33,6 +33,27 @@ function validAttachment(a: unknown): Attachment | null {
   };
 }
 
+/**
+ * Niche/project for a new thread. Only ids that exist (RLS: owner) are kept, and a project
+ * always brings its own niche, so a thread can never point at a project of another niche.
+ */
+async function resolveScope(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  nicheId: unknown,
+  projectId: unknown,
+): Promise<{ niche_id?: string; project_id?: string }> {
+  const uuid = /^[0-9a-f-]{36}$/i;
+  if (typeof projectId === "string" && uuid.test(projectId)) {
+    const { data } = await supabase.from("projects").select("id, niche_id").eq("id", projectId).maybeSingle();
+    if (data) return { niche_id: data.niche_id, project_id: data.id };
+  }
+  if (typeof nicheId === "string" && uuid.test(nicheId)) {
+    const { data } = await supabase.from("niches").select("id").eq("id", nicheId).maybeSingle();
+    if (data) return { niche_id: data.id };
+  }
+  return {};
+}
+
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
   const {
@@ -76,9 +97,10 @@ export async function POST(req: NextRequest) {
     if (!data) return NextResponse.json({ error: "not_found" }, { status: 404 });
     session = data;
   } else {
+    const scope = await resolveScope(supabase, body.nicheId, body.projectId);
     const { data, error } = await supabase
       .from("sessions")
-      .insert({ agent_id: agent.id, title: titleFrom(text || attachment?.name || ""), messages: [] })
+      .insert({ agent_id: agent.id, title: titleFrom(text || attachment?.name || ""), messages: [], ...scope })
       .select("id, title, messages")
       .single<Pick<Session, "id" | "title" | "messages">>();
     if (error || !data) return NextResponse.json({ error: "save_failed" }, { status: 500 });

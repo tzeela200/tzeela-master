@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, Bot, Star, Archive, Settings } from "lucide-react";
+import { Home, Bot, Star, Archive, Settings, FolderTree } from "lucide-react";
 
 const MOBILE_ITEMS = [
   { href: "/", label: "בית", icon: Home },
+  { href: "/niches", label: "נישות", icon: FolderTree },
   { href: "/outputs", label: "תוצרים", icon: Archive },
   { href: "/settings", label: "הגדרות", icon: Settings },
 ];
 
 const DESKTOP_ITEMS = [
   { href: "/", label: "בית", icon: Home },
+  { href: "/niches", label: "נישות", icon: FolderTree },
   { href: "/#all-agents", label: "כל הסוכנים", icon: Bot },
   { href: "/#favorites", label: "מועדפים", icon: Star },
   { href: "/outputs", label: "תוצרים", icon: Archive },
@@ -66,7 +68,7 @@ export function MobileNavigation() {
       aria-label="ניווט ראשי"
       className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface pb-[env(safe-area-inset-bottom)] md:hidden"
     >
-      <ul className="grid grid-cols-3">
+      <ul className="grid grid-cols-4">
         {MOBILE_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = isActive(pathname, href);
           return (

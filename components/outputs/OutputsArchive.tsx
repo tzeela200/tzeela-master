@@ -24,10 +24,12 @@ type DateRange = keyof typeof DATE_RANGES;
 export function OutputsArchive({
   initial,
   agents,
+  niches = [],
   openId,
 }: {
   initial: OutputRow[];
   agents: { id: string; name: string }[];
+  niches?: { id: string; name: string }[];
   openId: string | null;
 }) {
   const router = useRouter();
@@ -36,6 +38,7 @@ export function OutputsArchive({
   const [query, setQuery] = useState("");
   const [agent, setAgent] = useState("");
   const [category, setCategory] = useState("");
+  const [niche, setNiche] = useState("");
   const [status, setStatus] = useState<OutputStatus | "">("");
   const [range, setRange] = useState<DateRange>("all");
   const [showFilters, setShowFilters] = useState(false);
@@ -59,12 +62,13 @@ export function OutputsArchive({
         (!q || [r.summary_text, r.category, r.agentName].some((f) => f.toLowerCase().includes(q))) &&
         (!agent || r.agent_id === agent) &&
         (!category || r.category === category) &&
+        (!niche || (niche === "none" ? !r.niche_id : r.niche_id === niche)) &&
         (!status || r.status === status) &&
         (!since || new Date(r.created_at).getTime() >= since),
     );
-  }, [rows, query, agent, category, status, range]);
+  }, [rows, query, agent, category, niche, status, range]);
 
-  const activeFilters = [agent, category, status, range !== "all" ? range : ""].filter(Boolean).length;
+  const activeFilters = [agent, category, niche, status, range !== "all" ? range : ""].filter(Boolean).length;
 
   async function changeStatus(row: OutputRow, next: OutputStatus) {
     const prev = row.status;
@@ -147,7 +151,7 @@ export function OutputsArchive({
           <div
             id="output-filters"
             hidden={!showFilters}
-            className="mb-6 grid grid-cols-1 gap-3 rounded-card bg-surface p-4 shadow-soft sm:grid-cols-2 lg:grid-cols-4"
+            className="mb-6 grid grid-cols-1 gap-3 rounded-card bg-surface p-4 shadow-soft sm:grid-cols-2 lg:grid-cols-5"
           >
             <label className="text-[13px] text-secondary">
               סוכן
@@ -171,6 +175,20 @@ export function OutputsArchive({
                 ))}
               </select>
             </label>
+            {niches.length > 0 && (
+              <label className="text-[13px] text-secondary">
+                נישה
+                <select value={niche} onChange={(e) => setNiche(e.target.value)} className={selectCls}>
+                  <option value="">כל הנישות</option>
+                  {niches.map((n) => (
+                    <option key={n.id} value={n.id}>
+                      {n.name}
+                    </option>
+                  ))}
+                  <option value="none">ללא נישה</option>
+                </select>
+              </label>
+            )}
             <label className="text-[13px] text-secondary">
               סטטוס
               <select
