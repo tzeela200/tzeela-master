@@ -18,12 +18,17 @@ const BY_EXT: Record<string, AttachmentKind> = {
   pdf: "pdf",
   docx: "docx",
   xlsx: "xlsx",
+  // older / other spreadsheet formats: same server-side reader (SheetJS)
+  xls: "xlsx",
+  xlsm: "xlsx",
+  xlsb: "xlsx",
+  ods: "xlsx",
   png: "image",
   jpg: "image",
   jpeg: "image",
 };
 
-export const ACCEPT = ".pdf,.docx,.txt,.csv,.xlsx,.png,.jpg,.jpeg";
+export const ACCEPT = ".pdf,.docx,.txt,.csv,.xlsx,.xls,.xlsm,.xlsb,.ods,.png,.jpg,.jpeg";
 
 export function kindOf(fileName: string): AttachmentKind | null {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
@@ -32,7 +37,7 @@ export function kindOf(fileName: string): AttachmentKind | null {
 
 export const FILE_ERRORS = {
   tooBig: "הקובץ גדול מ־50MB, וזה הגודל המקסימלי שהאחסון מקבל לקובץ אחד.",
-  unsupported: "הפורמט לא נתמך. אפשר לצרף PDF, ‏Word, ‏Excel, ‏TXT, ‏CSV או תמונה.",
+  unsupported: "הפורמט לא נתמך. אפשר לצרף PDF, ‏Word, ‏Excel (xlsx/xls/xlsm/ods), ‏TXT, ‏CSV או תמונה.",
   unreadable: "לא הצלחנו לקרוא את הקובץ.",
   empty: "הקובץ ריק.",
   tooLong: "הקובץ ארוך מדי לשליחה בשיחה אחת.",
