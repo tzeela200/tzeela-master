@@ -503,6 +503,68 @@ for (const s of skills.values()) {
   if (owner) s.agents.push({ agent: owner, source: "folder_default" });
 }
 
+// ---------------------------------------------------------------- 10b2. user's classification of the 87 Israeli skills
+// skills_master_catalog_1_87.csv (2026-10-14): folder + agent + triggers for skills the
+// consolidated map did not list. Explicit user assignment, so it moves them out of the
+// separate home. Subfolders that do not exist in the canonical map are kept as a note only.
+{
+  const AGENT_BY_LABEL = {
+    "סוכן ממשל, חוק ובירוקרטיה": "gov_legal_agent",
+    "סוכן פיננסים, הנהלת חשבונות ומיסוי": "finops_agent",
+    "סוכן בית, תזונה ולייפסטייל": "lifestyle_home_agent",
+    "סוכן בקרת איכות, אבטחה ופיוס": "qa_security_agent",
+    "סוכן משרד, מסמכים ותקשורת עסקית": "doc_parsing_agent",
+    "סוכן מחקר, אקדמיה ומדע": "context_memory_agent",
+    "סוכן פיתוח AI ועיבוד שפה": FOLDER_OWNER["02"],
+    "סוכן אוטומציה, תפעול ואינטגרציות": FOLDER_OWNER["03"],
+    "סוכן מוצר, עיצוב ולוקליזציה": FOLDER_OWNER["04"],
+    "סוכן שער הכניסה ופיוס זהויות": "gateway_agent",
+    "סוכן משאבי אנוש, גיוס וקריירה": "hr_career_agent",
+    "סוכן שיווק, תוכן וצמיחה": "marketing_growth_agent",
+    // no canonical agent for these domains → no owner yet (user decision: separate home)
+    'סוכן תחבורה, רכב ונדל"ן': null,
+    "סוכן מסחר אלקטרוני, משלוחים ושירות": null,
+    "סוכן מדיה, וידאו ואודיו": null,
+  };
+  const [, ...rows] = parseCsv(read("skills_master_catalog_1_87.csv").replace(/^﻿/, ""));
+  let n = 0;
+  const nonCanonicalSub = [];
+  for (const r of rows) {
+    const [, nameHe, rawId, parent, sub, agentLabel, whenUse, whenNot] = r;
+    if (!rawId?.trim()) continue;
+    const id = resolve(rawId) ?? slug(rawId);
+    if (!skills.has(id)) {
+      report.conflicts.push({ type: "catalog87_unknown_skill", id: rawId });
+      continue;
+    }
+    n++;
+    const s = skills.get(id);
+    if (!s.name_he && nameHe) s.name_he = nameHe.trim();
+    if (!s.when_to_use && whenUse) s.when_to_use = whenUse.trim();
+    if (!s.when_not_to_use && whenNot) s.when_not_to_use = whenNot.trim();
+    if (!s.sources.includes("skills_master_catalog_1_87.csv")) s.sources.push("skills_master_catalog_1_87.csv");
+    if (folders.has(parent)) {
+      const subOk = folders.get(parent).subfolders.has(sub);
+      if (!subOk) nonCanonicalSub.push(`${parent}/${sub}`);
+      s.links = s.links.filter((l) => l.folder !== UNASSIGNED);
+      if (!s.links.some((l) => l.folder === parent && (l.subfolder ?? null) === (subOk ? sub : null)))
+        s.links.push({
+          folder: parent,
+          subfolder: subOk ? sub : null,
+          source: "skills_master_catalog_1_87.csv",
+          raw: subOk ? "" : `תת-תיקייה מוצעת: ${sub}`,
+        });
+    }
+    if (!(agentLabel in AGENT_BY_LABEL)) report.conflicts.push({ type: "catalog87_unknown_agent", id, name: agentLabel });
+    const agent = AGENT_BY_LABEL[agentLabel];
+    if (agent && !s.agents.some((x) => x.agent === agent)) s.agents.push({ agent, source: "skills_master_catalog_1_87.csv" });
+  }
+  report.notes.push(
+    `skills_master_catalog_1_87.csv: ${n} skills classified; ${nonCanonicalSub.length} suggested subfolders not in the canonical map (linked to parent folder)`,
+  );
+  report.catalog87_noncanonical_subfolders = [...new Set(nonCanonicalSub)];
+}
+
 // ---------------------------------------------------------------- 10c. folder sheet (different taxonomy)
 // The user chose the consolidated map as canonical; the sheet only contributes
 // skill ids that are missing everywhere else. They go to the separate home.

@@ -101,8 +101,18 @@ export async function POST(req: NextRequest) {
       const folder_id = folderIds.has(fid) ? fid : UNASSIGNED;
       linkMap.set(`${s.id}|${folder_id}`, { skill_id: s.id, folder_id, source: l.source, raw_mapping: l.raw ?? "" });
     }
+  // Links are catalog data (not edited in the app): replace them so re-classified skills
+  // leave their old folder (e.g. the separate home).
+  const { error: delLinksErr } = await supabase.from("skill_folder_links").delete().neq("skill_id", "");
+  if (delLinksErr) return fail("links_reset", delLinksErr);
   err = await upsertChunks("skill_folder_links", [...linkMap.values()], { onConflict: "skill_id,folder_id" });
   if (err) return fail("links", err);
+
+  // Skills removed from the bundle (merged duplicates) are removed from the catalog too.
+  const bundleIds = new Set(skillRows.map((s) => s.id));
+  const { data: dbSkills } = await supabase.from("skills").select("id");
+  const stale = (dbSkills ?? []).map((s) => s.id as string).filter((id) => !bundleIds.has(id));
+  if (stale.length) await supabase.from("skills").delete().in("id", stale);
 
   // 4. canonical agents: create missing ones; existing ones only get their type
   const { data: existing, error: exErr } = await supabase.from("agents").select("id, slug").not("slug", "is", null);
