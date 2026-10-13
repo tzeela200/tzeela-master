@@ -29,7 +29,7 @@ export function RegistryImport() {
   const input = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Result | null>(null);
-  const { dragging, dropProps } = useFileDrop((f) => onFile(f), { disabled: busy });
+  const { dragging, dropProps } = useFileDrop((files) => onFile(files[0]), { disabled: busy });
 
   async function onFile(file: File) {
     setBusy(true);

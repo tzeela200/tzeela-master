@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import type { Agent, Attachment, Message, Session } from "@/lib/types";
+import { attachmentsOf, type Agent, type Attachment, type Message, type Session } from "@/lib/types";
 import { MAX_TEXT_CHARS } from "@/lib/files";
 import { GENERATED_BUCKET, type ChatEvent, type ChatRequest } from "@/lib/chat-protocol";
 import { anthropic } from "@/lib/ai/anthropic";
@@ -19,18 +19,34 @@ const MAX_MESSAGE_CHARS = 100_000;
 /** Accepts only well-formed attachments: storage paths inside attachments/, text within the cap. */
 function validAttachment(a: unknown): Attachment | null {
   if (!a || typeof a !== "object") return null;
-  const { name, kind, path, text } = a as Record<string, unknown>;
+  const { name, kind, path, text, textPath } = a as Record<string, unknown>;
   const kinds = ["txt", "csv", "pdf", "docx", "xlsx", "image"];
+  const inBucket = (p: unknown) => typeof p === "string" && p.startsWith("attachments/") && !p.includes("..");
   if (typeof name !== "string" || !name || typeof kind !== "string" || !kinds.includes(kind)) return null;
-  if (path !== undefined && (typeof path !== "string" || !path.startsWith("attachments/"))) return null;
+  if (path !== undefined && !inBucket(path)) return null;
+  if (textPath !== undefined && !inBucket(textPath)) return null;
   if (text !== undefined && (typeof text !== "string" || text.length > MAX_TEXT_CHARS)) return null;
-  if (!path && !text) return null;
+  if (!path && !text && !textPath) return null;
   return {
-    name: name.slice(0, 200),
+    name: name.slice(0, 300),
     kind: kind as Attachment["kind"],
     ...(typeof path === "string" ? { path } : {}),
     ...(typeof text === "string" ? { text } : {}),
+    ...(typeof textPath === "string" ? { textPath } : {}),
   };
+}
+
+/** Any number of files; a single malformed one rejects the request (never silently dropped). */
+function validAttachments(body: ChatRequest): Attachment[] | null {
+  const raw = Array.isArray(body.attachments) ? body.attachments : [];
+  const list = raw.map(validAttachment);
+  return list.every(Boolean) ? (list as Attachment[]) : null;
+}
+
+/** The model rejected the request because the thread + files exceed its context window. */
+function isTooLong(err: unknown) {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /prompt is too long|too many tokens|context (window|length)|maximum context|too many (images|documents)|request too large|request_too_large/i.test(msg);
 }
 
 /**
@@ -68,9 +84,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
   const text = typeof body.message === "string" ? body.message.trim() : "";
-  const attachment = validAttachment(body.attachment);
-  if (body.attachment && !attachment) return NextResponse.json({ error: "bad_request" }, { status: 400 });
-  if (!body.agentId || (!body.retry && !text && !attachment) || text.length > MAX_MESSAGE_CHARS) {
+  const attachments = validAttachments(body);
+  if (!attachments) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  if (!body.agentId || (!body.retry && !text && !attachments.length) || text.length > MAX_MESSAGE_CHARS) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
   if (body.retry && !body.sessionId) {
@@ -100,7 +116,7 @@ export async function POST(req: NextRequest) {
     const scope = await resolveScope(supabase, body.nicheId, body.projectId);
     const { data, error } = await supabase
       .from("sessions")
-      .insert({ agent_id: agent.id, title: titleFrom(text || attachment?.name || ""), messages: [], ...scope })
+      .insert({ agent_id: agent.id, title: titleFrom(text || attachments[0]?.name || ""), messages: [], ...scope })
       .select("id, title, messages")
       .single<Pick<Session, "id" | "title" | "messages">>();
     if (error || !data) return NextResponse.json({ error: "save_failed" }, { status: 500 });
@@ -118,7 +134,7 @@ export async function POST(req: NextRequest) {
     }
   } else {
     const userMsg = newMessage("user", text);
-    if (attachment) userMsg.attachment = attachment;
+    if (attachments.length) userMsg.attachments = attachments;
     history = [...history, userMsg];
     const { error } = await supabase
       .from("sessions")
@@ -149,11 +165,11 @@ export async function POST(req: NextRequest) {
         // Auto-title only while the thread still has its fallback title (never overwrite a rename).
         let title: string | null | undefined;
         const first = messages.find((m) => m.role === "user");
-        const firstText = first?.content || first?.attachment?.name || "";
+        const files = first ? attachmentsOf(first) : [];
+        const firstText = first?.content || files[0]?.name || "";
         if (session.title === titleFrom(firstText)) {
           title = await generateTitle(
-            first?.attachment ? `${firstText}
-(קובץ מצורף: ${first.attachment.name})` : firstText,
+            files.length ? `${firstText}\n(קבצים מצורפים: ${files.map((f) => f.name).join(", ")})` : firstText,
           );
         }
         const update: { messages: Message[]; title?: string } = { messages };
@@ -213,7 +229,7 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         if (!signal.aborted) {
           console.error("[chat]", agent.is_image_generator ? "image" : "text", err);
-          emit({ t: "error", kind: agent.is_image_generator ? "image" : "text" });
+          emit({ t: "error", kind: agent.is_image_generator ? "image" : isTooLong(err) ? "too_long" : "text" });
         }
       } finally {
         try {

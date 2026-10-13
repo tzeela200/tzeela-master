@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText, FileSpreadsheet, Image as ImageIcon, X, Loader2, AlertCircle, RefreshCw } from "lucide-react";
+import { FileText, FileSpreadsheet, Image as ImageIcon, X, Loader2, AlertCircle } from "lucide-react";
 import { formatBytes, kindOf } from "@/lib/files";
 import type { AttachmentKind } from "@/lib/types";
 import type { AttachmentState } from "./useAttachment";
@@ -11,36 +11,68 @@ export function fileIcon(kind: AttachmentKind | null) {
   return FileText;
 }
 
-export function AttachmentPreview({
-  state,
+/** The files waiting to be sent with the next message. */
+export function AttachmentList({
+  items,
   onRemove,
-  onReplace,
+  onClear,
 }: {
-  state: AttachmentState;
-  onRemove: () => void;
-  onReplace: () => void;
+  items: AttachmentState[];
+  onRemove: (id: string) => void;
+  onClear: () => void;
 }) {
+  if (!items.length) return null;
+  const ready = items.filter((x) => x.status === "ready").length;
+  const busy = items.filter((x) => x.status === "processing").length;
+  const failed = items.length - ready - busy;
+
+  return (
+    <div className="mx-auto mb-2 max-w-3xl">
+      {items.length > 1 && (
+        <div className="mb-1 flex items-center gap-2 text-[13px] text-secondary">
+          <p className="flex-1" aria-live="polite">
+            {items.length} קבצים · {ready} מוכנים
+            {busy ? ` · ${busy} בעיבוד` : ""}
+            {failed ? ` · ${failed} עם בעיה (לא יישלחו)` : ""}
+          </p>
+          <button type="button" onClick={onClear} className="flex h-9 items-center rounded-button px-2 text-primary hover:bg-primary-hover">
+            הסרת הכל
+          </button>
+        </div>
+      )}
+      <ul className="max-h-48 space-y-1 overflow-y-auto">
+        {items.map((state) => (
+          <li key={state.id}>
+            <AttachmentRow state={state} onRemove={() => onRemove(state.id)} />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function AttachmentRow({ state, onRemove }: { state: AttachmentState; onRemove: () => void }) {
   const Icon = fileIcon(kindOf(state.name));
   const isError = state.status === "error";
 
   return (
     <div
-      className={`mx-auto mb-2 flex max-w-3xl items-center gap-3 rounded-input border px-3 py-2 ${
+      className={`flex items-center gap-3 rounded-input border px-3 py-1.5 ${
         isError ? "border-error bg-error/5" : "border-border bg-bg"
       }`}
       role={isError ? "alert" : undefined}
     >
       {state.status === "ready" && state.previewUrl ? (
         // eslint-disable-next-line @next/next/no-img-element -- local object URL preview
-        <img src={state.previewUrl} alt="" className="size-10 shrink-0 rounded-md object-cover" />
+        <img src={state.previewUrl} alt="" className="size-9 shrink-0 rounded-md object-cover" />
       ) : (
-        <Icon className={`size-6 shrink-0 ${isError ? "text-error" : "text-primary"}`} aria-hidden />
+        <Icon className={`size-5 shrink-0 ${isError ? "text-error" : "text-primary"}`} aria-hidden />
       )}
       <div className="min-w-0 flex-1">
         <p className="truncate text-[14px] font-medium" dir="auto">
           {state.name}
         </p>
-        <p className={`text-[13px] ${isError ? "text-error" : "text-secondary"}`} aria-live="polite">
+        <p className={`text-[13px] ${isError ? "text-error" : "text-secondary"}`}>
           {state.status === "processing" && (
             <span className="inline-flex items-center gap-1">
               <Loader2 className="size-3.5 animate-spin" aria-hidden />
@@ -56,21 +88,11 @@ export function AttachmentPreview({
           )}
         </p>
       </div>
-      {isError && (
-        <button
-          type="button"
-          onClick={onReplace}
-          className="flex h-11 items-center gap-1 rounded-button px-3 text-[14px] font-medium text-primary hover:bg-primary-hover"
-        >
-          <RefreshCw className="size-4" aria-hidden />
-          החלפת קובץ
-        </button>
-      )}
       <button
         type="button"
         onClick={onRemove}
-        aria-label="הסרת הקובץ"
-        className="flex size-11 shrink-0 items-center justify-center rounded-button text-secondary hover:bg-primary-hover"
+        aria-label={`הסרת ${state.name}`}
+        className="flex size-10 shrink-0 items-center justify-center rounded-button text-secondary hover:bg-primary-hover"
       >
         <X className="size-5" aria-hidden />
       </button>

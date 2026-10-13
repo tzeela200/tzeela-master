@@ -6,6 +6,7 @@ import type { Attachment } from "@/lib/types";
 import {
   ATTACH_BUCKET,
   FILE_ERRORS,
+  INLINE_TEXT_CHARS,
   MAX_FILE_BYTES,
   MAX_TEXT_CHARS,
   kindOf,
@@ -13,11 +14,13 @@ import {
 } from "@/lib/files";
 
 export type AttachmentState =
-  | { status: "processing"; name: string; size: number }
-  | { status: "ready"; name: string; size: number; attachment: Attachment; previewUrl?: string }
-  | { status: "error"; name: string; size: number; message: string };
+  | { id: string; status: "processing"; name: string; size: number }
+  | { id: string; status: "ready"; name: string; size: number; attachment: Attachment; previewUrl?: string }
+  | { id: string; status: "error"; name: string; size: number; message: string };
 
 const MAX_IMAGE_EDGE = 1600;
+/** Files processed at the same time (uploads + extraction); the rest wait their turn. */
+const PARALLEL = 4;
 
 /** Downscale photos in the browser: smaller upload, and within the model's per-image limit. */
 async function prepareImage(file: File): Promise<Blob> {
@@ -49,76 +52,110 @@ async function upload(blob: Blob, ext: string, contentType: string) {
   return path;
 }
 
-export function useAttachment() {
-  const [state, setState] = useState<AttachmentState | null>(null);
-  const runId = useRef(0);
+class FileProblem extends Error {
+  constructor(public key: FileErrorKey) {
+    super(key);
+  }
+}
 
-  const clear = useCallback(() => {
-    runId.current++;
-    setState((s) => {
-      if (s?.status === "ready" && s.previewUrl) URL.revokeObjectURL(s.previewUrl);
-      return null;
+/** One file → an Attachment the chat can send (uploads / extraction as needed). */
+async function process(file: File): Promise<{ attachment: Attachment; previewUrl?: string }> {
+  const kind = kindOf(file.name);
+  if (!kind) throw new FileProblem("unsupported");
+  if (file.size > MAX_FILE_BYTES) throw new FileProblem("tooBig");
+  if (file.size === 0) throw new FileProblem("empty");
+
+  if (kind === "txt" || kind === "csv") {
+    const text = (await file.text()).replace(/^﻿/, "").trim();
+    if (!text) throw new FileProblem("empty");
+    if (text.length > MAX_TEXT_CHARS) throw new FileProblem("tooLong");
+    // Long text is kept in private storage so the message itself stays small.
+    if (text.length > INLINE_TEXT_CHARS) {
+      const textPath = await upload(new Blob([text], { type: "text/plain;charset=utf-8" }), "txt", "text/plain;charset=utf-8");
+      return { attachment: { name: file.name, kind, textPath } };
+    }
+    return { attachment: { name: file.name, kind, text } };
+  }
+  if (kind === "image") {
+    const blob = await prepareImage(file);
+    const isPng = blob.type === "image/png";
+    const path = await upload(blob, isPng ? "png" : "jpg", isPng ? "image/png" : "image/jpeg");
+    return { attachment: { name: file.name, kind, path }, previewUrl: URL.createObjectURL(blob) };
+  }
+  // PDF / DOCX / XLSX: stored privately, text extracted on the server.
+  const mime =
+    kind === "pdf"
+      ? "application/pdf"
+      : kind === "docx"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const path = await upload(file, kind, mime);
+  const res = await fetch("/api/extract", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path, kind }),
+  });
+  if (!res.ok) throw new FileProblem("unreadable");
+  const data = (await res.json()) as
+    | { ok: true; mode: "text"; text: string }
+    | { ok: true; mode: "textPath"; textPath: string }
+    | { ok: true; mode: "document" }
+    | { ok: false; error: FileErrorKey };
+  if (!data.ok) throw new FileProblem(data.error);
+  if (data.mode === "text") return { attachment: { name: file.name, kind, text: data.text } };
+  if (data.mode === "textPath") return { attachment: { name: file.name, kind, textPath: data.textPath } };
+  return { attachment: { name: file.name, kind, path } };
+}
+
+/** Any number of files per message; each one is processed and shown separately. */
+export function useAttachments() {
+  const [items, setItems] = useState<AttachmentState[]>([]);
+  // Bumped by clear(): results of files still processing for a cleared list are ignored.
+  const generation = useRef(0);
+
+  const update = (id: string, next: AttachmentState) =>
+    setItems((list) => list.map((x) => (x.id === id ? next : x)));
+
+  const remove = useCallback((id: string) => {
+    setItems((list) => {
+      const gone = list.find((x) => x.id === id);
+      if (gone?.status === "ready" && gone.previewUrl) URL.revokeObjectURL(gone.previewUrl);
+      return list.filter((x) => x.id !== id);
     });
   }, []);
 
-  const attach = useCallback(async (file: File) => {
-    const id = ++runId.current;
-    const base = { name: file.name, size: file.size };
-    const fail = (key: FileErrorKey) => {
-      if (id === runId.current) setState({ status: "error", ...base, message: FILE_ERRORS[key] });
-    };
-
-    const kind = kindOf(file.name);
-    if (!kind) return fail("unsupported");
-    if (file.size > MAX_FILE_BYTES) return fail("tooBig");
-    if (file.size === 0) return fail("empty");
-
-    setState({ status: "processing", ...base });
-    try {
-      let attachment: Attachment;
-      let previewUrl: string | undefined;
-
-      if (kind === "txt" || kind === "csv") {
-        // Client-side extraction: the raw file never leaves the browser.
-        const text = (await file.text()).replace(/^﻿/, "").trim();
-        if (!text) return fail("empty");
-        if (text.length > MAX_TEXT_CHARS) return fail("tooLong");
-        attachment = { name: file.name, kind, text };
-      } else if (kind === "image") {
-        const blob = await prepareImage(file);
-        const isPng = blob.type === "image/png";
-        const path = await upload(blob, isPng ? "png" : "jpg", isPng ? "image/png" : "image/jpeg");
-        attachment = { name: file.name, kind, path };
-        previewUrl = URL.createObjectURL(blob);
-      } else {
-        // PDF / DOCX / XLSX: stored privately, text extracted on the server.
-        const mime =
-          kind === "pdf"
-            ? "application/pdf"
-            : kind === "docx"
-              ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-              : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-        const path = await upload(file, kind, mime);
-        const res = await fetch("/api/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path, kind }),
-        });
-        if (!res.ok) return fail("unreadable");
-        const data = (await res.json()) as
-          | { ok: true; mode: "text"; text: string }
-          | { ok: true; mode: "document" }
-          | { ok: false; error: FileErrorKey };
-        if (!data.ok) return fail(data.error);
-        attachment =
-          data.mode === "text" ? { name: file.name, kind, text: data.text } : { name: file.name, kind, path };
-      }
-
-      if (id === runId.current) setState({ status: "ready", ...base, attachment, previewUrl });
-    } catch {
-      fail("unreadable");
-    }
+  const clear = useCallback(() => {
+    generation.current++;
+    setItems((list) => {
+      for (const x of list) if (x.status === "ready" && x.previewUrl) URL.revokeObjectURL(x.previewUrl);
+      return [];
+    });
   }, []);
 
-  return { state, attach, clear };
+  const add = useCallback(async (files: File[]) => {
+    if (!files.length) return;
+    const gen = generation.current;
+    const queued = files.map((file) => ({ file, id: crypto.randomUUID() }));
+    setItems((list) => [
+      ...list,
+      ...queued.map(({ file, id }) => ({ id, status: "processing" as const, name: file.name, size: file.size })),
+    ]);
+    let next = 0;
+    const worker = async () => {
+      while (next < queued.length) {
+        const { file, id } = queued[next++];
+        const base = { id, name: file.name, size: file.size };
+        try {
+          const { attachment, previewUrl } = await process(file);
+          if (gen === generation.current) update(id, { ...base, status: "ready", attachment, previewUrl });
+        } catch (err) {
+          const key: FileErrorKey = err instanceof FileProblem ? err.key : "unreadable";
+          if (gen === generation.current) update(id, { ...base, status: "error", message: FILE_ERRORS[key] });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(PARALLEL, queued.length) }, worker));
+  }, []);
+
+  return { items, add, remove, clear };
 }

@@ -20,6 +20,8 @@ export type Attachment = {
   path?: string;
   /** Extracted text — TXT/CSV (in the browser) and PDF/DOCX/XLSX (on the server) */
   text?: string;
+  /** Long extracted text kept in storage (uploads bucket) instead of inside the message */
+  textPath?: string;
 };
 
 export type Message = {
@@ -28,12 +30,19 @@ export type Message = {
   content: string;
   /** Storage path of a generated image (assistant messages of image agents) */
   imageUrl?: string;
-  /** One file per user message */
+  /** Files attached to a user message (any number, incl. a whole folder) */
+  attachments?: Attachment[];
+  /** Older messages (single-file era) — read through attachmentsOf() */
   attachment?: Attachment;
   /** Set once this answer was saved to the outputs archive */
   outputId?: string;
   createdAt: string;
 };
+
+/** All files of a message, for old (single) and new (list) messages alike. */
+export function attachmentsOf(m: Pick<Message, "attachments" | "attachment">): Attachment[] {
+  return m.attachments ?? (m.attachment ? [m.attachment] : []);
+}
 
 export type Session = {
   id: string;

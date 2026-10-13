@@ -5,7 +5,7 @@ export type ChatEvent =
   | { t: "session"; id: string; title: string | null }
   | { t: "delta"; text: string }
   | { t: "done"; message: Message; title?: string | null }
-  | { t: "error"; kind: "text" | "image" };
+  | { t: "error"; kind: "text" | "image" | "too_long" };
 
 export type ChatRequest = {
   agentId: string;
@@ -13,7 +13,7 @@ export type ChatRequest = {
   message: string;
   /** Re-run the answer for the last saved user message instead of adding a new one. */
   retry?: boolean;
-  attachment?: Attachment | null;
+  attachments?: Attachment[];
   /** New threads only: the niche / project the thread belongs to. */
   nicheId?: string | null;
   projectId?: string | null;

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Markdown } from "../Markdown";
 import { Copy, Check, Share2, RotateCcw, Download, MessageSquare, AlertCircle, Bookmark, BookmarkCheck, Loader2 } from "lucide-react";
-import type { AttachmentKind, Message } from "@/lib/types";
+import { attachmentsOf, type AttachmentKind, type Message } from "@/lib/types";
 import { fileIcon } from "./AttachmentPreview";
 import { createClient } from "@/lib/supabase/client";
 import { GENERATED_BUCKET } from "@/lib/chat-protocol";
@@ -118,7 +118,15 @@ function MessageItem({
     return (
       <li className="flex flex-col items-start gap-1">
         <span className="sr-only">את:</span>
-        {message.attachment && <AttachmentChip name={message.attachment.name} kind={message.attachment.kind} path={message.attachment.kind === "image" ? message.attachment.path : undefined} />}
+        {attachmentsOf(message).length > 0 && (
+          <ul className="flex max-w-[85%] flex-wrap gap-1" aria-label="קבצים מצורפים">
+            {attachmentsOf(message).map((a, i) => (
+              <li key={`${a.name}-${i}`} className="min-w-0 max-w-full">
+                <AttachmentChip name={a.name} kind={a.kind} path={a.kind === "image" ? a.path : undefined} />
+              </li>
+            ))}
+          </ul>
+        )}
         {message.content && (
           <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-card bg-primary px-4 py-3 leading-relaxed text-white">
             <span dir="auto">{message.content}</span>
@@ -146,7 +154,7 @@ function MessageItem({
 function AttachmentChip({ name, kind, path }: { name: string; kind: AttachmentKind; path?: string }) {
   const Icon = fileIcon(kind);
   return (
-    <div className="flex max-w-[85%] items-center gap-2 rounded-input border border-border bg-surface px-3 py-2">
+    <div className="flex max-w-full items-center gap-2 rounded-input border border-border bg-surface px-3 py-2">
       {path ? <AttachedImage path={path} /> : <Icon className="size-5 shrink-0 text-primary" aria-hidden />}
       <span className="sr-only">קובץ מצורף:</span>
       <span className="truncate text-[14px]" dir="auto">

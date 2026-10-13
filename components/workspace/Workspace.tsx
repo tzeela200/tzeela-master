@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowRight, Pencil, ListTree, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Agent, Attachment, Message } from "@/lib/types";
-import { takePendingFile } from "@/lib/pending-file";
+import { takePendingFiles } from "@/lib/pending-file";
 import { newMessage, renameSession, type SessionSummary } from "@/lib/sessions";
 import type { ChatEvent, ChatRequest } from "@/lib/chat-protocol";
 import { AgentIcon } from "../AgentIcon";
@@ -36,6 +36,8 @@ type Props = {
 const ERR_TEXT = "לא הצלחנו לקבל תשובה.";
 const ERR_IMAGE = "לא הצלחנו ליצור את התמונה.";
 const ERR_OFFLINE = "אין כרגע חיבור לאינטרנט.";
+const ERR_TOO_LONG =
+  "הקבצים והשיחה יחד גדולים מכפי שהמודל יכול לקרוא בבת אחת. אפשר לשלוח חלק מהקבצים עכשיו ואת השאר בהודעה בנושא חדש.";
 
 // Each thread mounts its own Workspace instance (keyed by session id in the page),
 // so no message state can carry over between threads.
@@ -69,18 +71,18 @@ export function Workspace({
   const [editingTitle, setEditingTitle] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const intent = useSearchParams().get("intent");
-  const [initialFile, setInitialFile] = useState<File | null>(null);
-  // Dropping a file anywhere on the conversation attaches it, like the paperclip.
-  const { dragging, dropProps } = useFileDrop(setInitialFile, { disabled: agent.is_image_generator });
+  const [incomingFiles, setIncomingFiles] = useState<File[] | null>(null);
+  // Dropping files or folders anywhere on the conversation attaches them, like the paperclip.
+  const { dragging, dropProps } = useFileDrop(setIncomingFiles, { disabled: agent.is_image_generator });
 
-  // "העלאת קובץ" from the dashboard: the file picked there is attached here.
+  // "העלאת קובץ" from the dashboard / a niche: the files picked there are attached here.
   // Consumed once — the guard survives React's double-invoked effects in development.
   const fileTaken = useRef(false);
   useEffect(() => {
     if (intent !== "upload" || fileTaken.current) return;
     fileTaken.current = true;
-    const f = takePendingFile(agent.id);
-    if (f) setInitialFile(f);
+    const f = takePendingFiles(agent.id);
+    if (f.length) setIncomingFiles(f);
   }, [intent, agent.id]);
   const sessionIdRef = useRef<string | null>(sessionId);
 
@@ -164,7 +166,7 @@ export function Workspace({
             if (ev.title) setTitle(ev.title);
             upsertSummary(sessionIdRef.current!, ev.title ?? title);
           } else if (ev.t === "error") {
-            setFailure({ message: ev.kind === "image" ? ERR_IMAGE : ERR_TEXT });
+            setFailure({ message: ev.kind === "image" ? ERR_IMAGE : ev.kind === "too_long" ? ERR_TOO_LONG : ERR_TEXT });
           }
         }
       }
@@ -184,11 +186,11 @@ export function Workspace({
     return true;
   }
 
-  async function send(text: string, attachment: Attachment | null): Promise<boolean> {
+  async function send(text: string, attachments: Attachment[]): Promise<boolean> {
     const optimistic = newMessage("user", text);
-    if (attachment) optimistic.attachment = attachment;
+    if (attachments.length) optimistic.attachments = attachments;
     setMessages((list) => [...list, optimistic]);
-    const accepted = await run({ message: text, attachment });
+    const accepted = await run({ message: text, attachments });
     if (!accepted) setMessages((list) => list.filter((m) => m.id !== optimistic.id));
     return accepted;
   }
@@ -293,7 +295,7 @@ export function Workspace({
         <ThreadPanel agentId={agent.id} sessions={sessions} currentId={sessionId} />
 
         <div className="relative flex min-w-0 flex-1 flex-col" {...dropProps}>
-          {dragging && <DropOverlay label="שחררי כאן כדי לצרף את הקובץ" />}
+          {dragging && <DropOverlay label="שחררי כאן כדי לצרף (קבצים או תיקייה שלמה)" />}
           {/* Thread bar */}
           <div className="flex shrink-0 items-center gap-1 border-b border-border bg-surface/60 px-2 py-1 md:px-4">
             <button
@@ -377,7 +379,7 @@ export function Workspace({
             onStop={stop}
             generating={generating}
             allowFiles={!agent.is_image_generator}
-            initialFile={initialFile}
+            incomingFiles={incomingFiles}
             voiceReady={intent === "voice"}
           />
         </div>

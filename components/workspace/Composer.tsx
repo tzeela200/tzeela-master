@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { SendHorizontal, Square, Paperclip } from "lucide-react";
+import { SendHorizontal, Square, Paperclip, FolderUp } from "lucide-react";
 import type { Attachment } from "@/lib/types";
-import { ACCEPT } from "@/lib/files";
+import { ACCEPT, skippedNote, splitSupported } from "@/lib/files";
 import { useToast } from "../Toast";
 import { useOnline } from "@/lib/useOnline";
-import { useAttachment } from "./useAttachment";
-import { AttachmentPreview } from "./AttachmentPreview";
+import { useAttachments } from "./useAttachment";
+import { AttachmentList } from "./AttachmentPreview";
 import { VoiceButton } from "./VoiceButton";
 
 export function Composer({
@@ -15,17 +15,17 @@ export function Composer({
   onStop,
   generating,
   allowFiles,
-  initialFile,
+  incomingFiles,
   voiceReady,
 }: {
-  onSend: (text: string, attachment: Attachment | null) => Promise<boolean>;
+  onSend: (text: string, attachments: Attachment[]) => Promise<boolean>;
   onStop: () => void;
   /** An answer is being produced — the send button becomes "stop". */
   generating: boolean;
   /** Image agents work from text prompts only. */
   allowFiles: boolean;
-  /** File chosen on the dashboard before opening this workspace. */
-  initialFile?: File | null;
+  /** Files handed in from outside (dashboard pick, or dropped on the thread). New array = add. */
+  incomingFiles?: File[] | null;
   /** Opened via "שיחה קולית": focus and highlight the microphone. */
   voiceReady?: boolean;
 }) {
@@ -33,8 +33,15 @@ export function Composer({
   const [text, setText] = useState("");
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const folderRef = useRef<HTMLInputElement>(null);
   const micRef = useRef<HTMLButtonElement>(null);
-  const { state: file, attach, clear } = useAttachment();
+  const { items, add, remove, clear } = useAttachments();
+
+  function addFiles(list: File[]) {
+    const { files, skipped } = splitSupported(list);
+    if (skipped) toast(skippedNote(skipped));
+    add(files);
+  }
   // Offline: AI actions are disabled; text typed so far is kept for when the connection returns.
   const online = useOnline();
 
@@ -49,20 +56,21 @@ export function Composer({
   }, [text]);
 
   useEffect(() => {
-    if (initialFile) attach(initialFile);
-  }, [initialFile, attach]);
+    if (incomingFiles?.length) addFiles(incomingFiles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once per handed-in batch
+  }, [incomingFiles]);
 
   useEffect(() => {
     if (voiceReady) micRef.current?.focus();
   }, [voiceReady]);
 
-  const fileReady = file?.status === "ready";
-  const fileBusy = file?.status === "processing";
-  const canSend = online && !generating && !fileBusy && (text.trim().length > 0 || fileReady);
+  const ready = items.flatMap((x) => (x.status === "ready" ? [x.attachment] : []));
+  const filesBusy = items.some((x) => x.status === "processing");
+  const canSend = online && !generating && !filesBusy && (text.trim().length > 0 || ready.length > 0);
 
   async function submit() {
     if (!canSend) return;
-    const ok = await onSend(text.trim(), fileReady ? file.attachment : null);
+    const ok = await onSend(text.trim(), ready);
     if (ok) {
       setText("");
       clear();
@@ -90,33 +98,56 @@ export function Composer({
       }}
       className="border-t border-border bg-surface px-3 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]"
     >
-      {file && (
-        <AttachmentPreview state={file} onRemove={clear} onReplace={() => fileRef.current?.click()} />
-      )}
+      <AttachmentList items={items} onRemove={remove} onClear={clear} />
       <input
         ref={fileRef}
         type="file"
         accept={ACCEPT}
+        multiple
         className="sr-only"
         tabIndex={-1}
         aria-hidden
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) attach(f);
+          addFiles(Array.from(e.target.files ?? []));
+          e.target.value = "";
+        }}
+      />
+      <input
+        ref={folderRef}
+        type="file"
+        // a whole folder (incl. sub-folders); not part of React's typings
+        {...{ webkitdirectory: "", directory: "" }}
+        multiple
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => {
+          addFiles(Array.from(e.target.files ?? []));
           e.target.value = "";
         }}
       />
       <div className="mx-auto flex max-w-3xl items-end gap-1">
         {allowFiles && (
-          <button
-            type="button"
-            onClick={() => fileRef.current?.click()}
-            disabled={generating || !online}
-            aria-label="צירוף קובץ"
-            className={iconBtn}
-          >
-            <Paperclip className="size-5" aria-hidden />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={generating || !online}
+              aria-label="צירוף קבצים"
+              className={iconBtn}
+            >
+              <Paperclip className="size-5" aria-hidden />
+            </button>
+            <button
+              type="button"
+              onClick={() => folderRef.current?.click()}
+              disabled={generating || !online}
+              aria-label="צירוף תיקייה"
+              className={`${iconBtn} max-sm:hidden`}
+            >
+              <FolderUp className="size-5" aria-hidden />
+            </button>
+          </>
         )}
         <VoiceButton
           ref={micRef}

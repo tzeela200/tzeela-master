@@ -34,7 +34,7 @@ import { ConfirmDialog } from "../ConfirmDialog";
 import { useToast } from "../Toast";
 import { DropOverlay } from "../DropOverlay";
 import { useFileDrop } from "@/lib/useFileDrop";
-import { droppedFileProblem } from "@/lib/files";
+import { dropTitle, skippedNote, splitSupported } from "@/lib/files";
 import { NicheForm } from "./NicheForm";
 
 export type NicheThread = {
@@ -125,12 +125,13 @@ export function NicheDetail({
   const [subForm, setSubForm] = useState(false);
   const [archiving, setArchiving] = useState(false);
   const [picker, setPicker] = useState(false);
-  // A file dropped on the niche page opens a new thread in this niche with the file attached.
-  const [dropped, setDropped] = useState<File | null>(null);
-  const { dragging, dropProps } = useFileDrop((f) => {
-    const problem = droppedFileProblem(f);
-    if (problem) return toast(problem, "error");
-    setDropped(f);
+  // Files / a folder dropped on the niche page open a new thread in this niche with them attached.
+  const [dropped, setDropped] = useState<File[] | null>(null);
+  const { dragging, dropProps } = useFileDrop((all) => {
+    const { files, skipped } = splitSupported(all);
+    if (skipped) toast(skippedNote(skipped), files.length ? "success" : "error");
+    if (!files.length) return;
+    setDropped(files);
     setPicker(true);
   });
   const [addingProject, setAddingProject] = useState(false);
@@ -251,7 +252,7 @@ export function NicheDetail({
 
   return (
     <main className="relative mx-auto min-h-dvh max-w-5xl px-4 py-6 md:px-8 md:py-10" {...dropProps}>
-      {dragging && <DropOverlay label="שחררי כאן כדי לפתוח נושא חדש עם הקובץ בנישה" />}
+      {dragging && <DropOverlay label="שחררי כאן כדי לפתוח נושא חדש בנישה עם הקבצים" />}
       {/* Header */}
       <header className="mb-2 flex items-center gap-1">
         <Link href={parent ? `/niches/${parent.id}` : "/niches"} aria-label="חזרה" className={`-ms-2 ${iconBtn} text-ink`}>
@@ -518,14 +519,14 @@ export function NicheDetail({
         open={picker}
         title={
           dropped
-            ? `לאיזה סוכן לצרף את "${dropped.name}"?`
+            ? dropTitle(dropped)
             : project
               ? `נושא חדש ב${project.name}: בחירת סוכן`
               : `נושא חדש ב${niche.name}: בחירת סוכן`
         }
         agents={agents}
         intent={dropped ? "upload" : "chat"}
-        file={dropped}
+        files={dropped}
         extraQuery={scopeQuery}
         onClose={() => {
           setPicker(false);

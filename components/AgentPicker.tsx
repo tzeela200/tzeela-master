@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { X } from "lucide-react";
 import type { Agent } from "@/lib/types";
 import { ACCEPT } from "@/lib/files";
-import { setPendingFile } from "@/lib/pending-file";
+import { setPendingFiles } from "@/lib/pending-file";
 import { AgentIcon } from "./AgentIcon";
 
 // Bottom sheet on mobile, centered dialog on desktop.
@@ -15,7 +15,7 @@ export function AgentPicker({
   agents,
   intent,
   extraQuery = "",
-  file = null,
+  files = null,
   onClose,
 }: {
   open: boolean;
@@ -24,8 +24,8 @@ export function AgentPicker({
   intent: "voice" | "upload" | "chat";
   /** Appended to the new thread's URL, e.g. "&niche=…&project=…" */
   extraQuery?: string;
-  /** upload: a file that was already dropped on the page */
-  file?: File | null;
+  /** upload: files (or a folder) already dropped on the page */
+  files?: File[] | null;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -76,13 +76,13 @@ export function AgentPicker({
           );
           return (
             <li key={a.id}>
-              {intent === "upload" && file ? (
-                // File already chosen (dragged in): picking the agent opens the thread with it.
+              {intent === "upload" && files?.length ? (
+                // Files already chosen (dragged in): picking the agent opens the thread with them.
                 <button
                   type="button"
                   className={`${rowCls} w-full text-start`}
                   onClick={() => {
-                    setPendingFile(a.id, file);
+                    setPendingFiles(a.id, files);
                     onClose();
                     router.push(`/agents/${a.id}?new=${Date.now()}&intent=upload${extraQuery}`);
                   }}
@@ -95,11 +95,12 @@ export function AgentPicker({
                   <input
                     type="file"
                     accept={ACCEPT}
+                    multiple
                     className="sr-only"
                     onChange={(e) => {
-                      const f = e.target.files?.[0];
-                      if (!f) return;
-                      setPendingFile(a.id, f);
+                      const f = Array.from(e.target.files ?? []);
+                      if (!f.length) return;
+                      setPendingFiles(a.id, f);
                       onClose();
                       router.push(`/agents/${a.id}?new=${Date.now()}&intent=upload${extraQuery}`);
                     }}

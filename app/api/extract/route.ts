@@ -1,12 +1,13 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { ATTACH_BUCKET, MAX_TEXT_CHARS, type FileErrorKey } from "@/lib/files";
+import { ATTACH_BUCKET, INLINE_TEXT_CHARS, MAX_TEXT_CHARS, type FileErrorKey } from "@/lib/files";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 type Result =
   | { ok: true; mode: "text"; text: string }
+  | { ok: true; mode: "textPath"; textPath: string }
   /** PDF without a text layer (scanned): sent to the model as a document instead */
   | { ok: true; mode: "document" }
   | { ok: false; error: FileErrorKey };
@@ -58,5 +59,14 @@ export async function POST(req: NextRequest) {
 
   if (!text) return NextResponse.json<Result>({ ok: false, error: "empty" });
   if (text.length > MAX_TEXT_CHARS) return NextResponse.json<Result>({ ok: false, error: "tooLong" });
+  // Long text stays in storage: request/response bodies (and the thread row) stay small.
+  if (text.length > INLINE_TEXT_CHARS) {
+    const textPath = `attachments/${crypto.randomUUID()}.txt`;
+    const up = await supabase.storage
+      .from(ATTACH_BUCKET)
+      .upload(textPath, new Blob([text], { type: "text/plain;charset=utf-8" }), { contentType: "text/plain;charset=utf-8" });
+    if (up.error) return NextResponse.json<Result>({ ok: false, error: "unreadable" });
+    return NextResponse.json<Result>({ ok: true, mode: "textPath", textPath });
+  }
   return NextResponse.json<Result>({ ok: true, mode: "text", text });
 }

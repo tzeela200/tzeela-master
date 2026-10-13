@@ -1,7 +1,7 @@
 import "server-only";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Agent, Attachment, Message } from "@/lib/types";
+import { attachmentsOf, type Agent, type Attachment, type Message } from "@/lib/types";
 import { ATTACH_BUCKET } from "@/lib/files";
 
 type Block = Anthropic.Beta.BetaContentBlockParam;
@@ -14,8 +14,12 @@ export function buildSystem(agent: Agent) {
 }
 
 async function attachmentBlocks(supabase: SupabaseClient, a: Attachment): Promise<Block[]> {
-  if (a.text) {
-    return [{ type: "text", text: `קובץ מצורף: ${a.name}\n<file>\n${a.text}\n</file>` }];
+  const asText = (text: string): Block[] => [{ type: "text", text: `קובץ מצורף: ${a.name}\n<file>\n${text}\n</file>` }];
+  if (a.text) return asText(a.text);
+  if (a.textPath) {
+    const { data, error } = await supabase.storage.from(ATTACH_BUCKET).download(a.textPath);
+    if (error || !data) return [{ type: "text", text: `[הקובץ ${a.name} אינו זמין יותר]` }];
+    return asText(await data.text());
   }
   if (!a.path) return [];
   const { data, error } = await supabase.storage.from(ATTACH_BUCKET).download(a.path);
@@ -45,7 +49,8 @@ export async function buildMessages(
   const out: { role: "user" | "assistant"; content: Block[] }[] = [];
   for (const m of threadMessages) {
     const blocks: Block[] = [];
-    if (m.role === "user" && m.attachment) blocks.push(...(await attachmentBlocks(supabase, m.attachment)));
+    if (m.role === "user")
+      for (const a of attachmentsOf(m)) blocks.push(...(await attachmentBlocks(supabase, a)));
     const text = m.content.trim() || (m.imageUrl ? "[תמונה שנוצרה בשיחה]" : "");
     if (text) blocks.push({ type: "text", text });
     if (!blocks.length) continue;

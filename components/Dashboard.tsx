@@ -10,7 +10,7 @@ import { EmptyState } from "./EmptyState";
 import { DropOverlay } from "./DropOverlay";
 import { useToast } from "./Toast";
 import { useFileDrop } from "@/lib/useFileDrop";
-import { droppedFileProblem } from "@/lib/files";
+import { dropTitle, skippedNote, splitSupported } from "@/lib/files";
 
 export type RecentItem = {
   kind: "thread" | "output";
@@ -38,13 +38,14 @@ export function Dashboard({
   const toast = useToast();
   const [query, setQuery] = useState("");
   const [picker, setPicker] = useState<"voice" | "upload" | null>(null);
-  // A file dropped anywhere on the page: same as "העלאת קובץ", then choose the agent.
-  const [dropped, setDropped] = useState<File | null>(null);
+  // Files or a folder dropped anywhere on the page: same as "העלאת קובץ", then choose the agent.
+  const [dropped, setDropped] = useState<File[] | null>(null);
   const { dragging, dropProps } = useFileDrop(
-    (f) => {
-      const problem = droppedFileProblem(f);
-      if (problem) return toast(problem, "error");
-      setDropped(f);
+    (all) => {
+      const { files, skipped } = splitSupported(all);
+      if (skipped) toast(skippedNote(skipped), files.length ? "success" : "error");
+      if (!files.length) return;
+      setDropped(files);
       setPicker("upload");
     },
     { disabled: agents.length === 0 },
@@ -102,7 +103,7 @@ export function Dashboard({
           />
           <QuickAction
             icon={Paperclip}
-            label="העלאת קובץ"
+            label="העלאת קבצים"
             onClick={() => setPicker("upload")}
             disabled={agents.length === 0}
           />
@@ -186,12 +187,12 @@ export function Dashboard({
         title={
           picker === "upload"
             ? dropped
-              ? `לאיזה סוכן לצרף את "${dropped.name}"?`
-              : "לאיזה סוכן לצרף את הקובץ?"
+              ? dropTitle(dropped)
+              : "לאיזה סוכן לצרף את הקבצים?"
             : "עם איזה סוכן לדבר?"
         }
         agents={agents}
-        file={dropped}
+        files={dropped}
         onClose={() => {
           setPicker(null);
           setDropped(null);
