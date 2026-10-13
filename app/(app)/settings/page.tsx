@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { LogoutButton } from "./LogoutButton";
+import { RegistryImport } from "./RegistryImport";
 
 export default async function SettingsPage() {
   const supabase = await createClient();
@@ -16,6 +17,14 @@ export default async function SettingsPage() {
           {user?.email}
         </p>
         <LogoutButton />
+      </section>
+      <section className="mt-6 rounded-card bg-surface p-6 shadow-soft">
+        <h2 className="mb-1 text-[18px]">קטלוג סקילים וסוכנים</h2>
+        <p className="mb-6 text-secondary">
+          טעינה של התיקיות, הסקילים, 12 הסוכנים הקבועים וצוותי המומחים מהקובץ registry-bundle.json. אפשר להריץ שוב:
+          הייבוא מעדכן בלי לדרוס שינויים שעשית בסוכנים.
+        </p>
+        <RegistryImport />
       </section>
     </main>
   );

@@ -43,3 +43,8 @@ next-env.d.ts
 
 # local verification builds
 /.next-verify/
+
+# raw source documents (personal; not committed)
+/data/sources/
+/data/registry/
+/data/registry-src/
